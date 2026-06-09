@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local environment
+.env
+.env.*
+
+# Training artifacts and model checkpoints
+runs/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/

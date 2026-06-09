@@ -1,0 +1,317 @@
+from __future__ import annotations
+
+import argparse
+import json
+import math
+from collections import Counter
+from pathlib import Path
+
+import torch
+import yaml
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+from transformers import AutoTokenizer
+
+from src.corruption import normalize_text
+from src.data import DenoisingDataset, build_pairs_from_config
+from src.models import FrozenEncoderAutoregressiveDecoder, FrozenEncoderDecoderConfig
+
+
+def load_config(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle)
+
+
+def resolve_device(requested: str) -> torch.device:
+    if requested == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("Requested cuda, but CUDA is not available.")
+    return torch.device(requested)
+
+
+def move_batch(batch: dict, device: torch.device) -> dict:
+    return {
+        key: value.to(device) if isinstance(value, torch.Tensor) else value
+        for key, value in batch.items()
+    }
+
+
+def token_f1(prediction: str, target: str) -> float:
+    pred_tokens = normalize_text(prediction).split()
+    target_tokens = normalize_text(target).split()
+    if not pred_tokens and not target_tokens:
+        return 1.0
+    if not pred_tokens or not target_tokens:
+        return 0.0
+    overlap = Counter(pred_tokens) & Counter(target_tokens)
+    overlap_count = sum(overlap.values())
+    if overlap_count == 0:
+        return 0.0
+    precision = overlap_count / len(pred_tokens)
+    recall = overlap_count / len(target_tokens)
+    return 2 * precision * recall / (precision + recall)
+
+
+def exact_match(prediction: str, target: str) -> float:
+    return float(normalize_text(prediction) == normalize_text(target))
+
+
+def load_model(cfg: dict, checkpoint: str, tokenizer, device: torch.device):
+    model_cfg = cfg["model"]
+    model = FrozenEncoderAutoregressiveDecoder(
+        FrozenEncoderDecoderConfig(
+            encoder_name=model_cfg["encoder_name"],
+            vocab_size=len(tokenizer),
+            pad_token_id=tokenizer.pad_token_id,
+            bos_token_id=tokenizer.cls_token_id or tokenizer.bos_token_id,
+            eos_token_id=tokenizer.sep_token_id or tokenizer.eos_token_id,
+            decoder_layers=int(model_cfg["decoder_layers"]),
+            decoder_heads=int(model_cfg["decoder_heads"]),
+            decoder_ffn_dim=int(model_cfg["decoder_ffn_dim"]),
+            dropout=float(model_cfg["dropout"]),
+            init_decoder_embeddings_from_encoder=bool(
+                model_cfg.get("init_decoder_embeddings_from_encoder", True)
+            ),
+            tie_token_embeddings=bool(model_cfg.get("tie_token_embeddings", True)),
+            use_cross_attention=bool(model_cfg.get("use_cross_attention", True)),
+        )
+    ).to(device)
+    model.load_state_dict(torch.load(checkpoint, map_location=device))
+    model.eval()
+    return model
+
+
+@torch.no_grad()
+def evaluate_loss(model, loader: DataLoader, device: torch.device) -> float:
+    losses: list[float] = []
+    for batch in tqdm(loader, desc="loss", leave=False):
+        batch = move_batch(batch, device)
+        outputs = model(
+            input_ids=batch["input_ids"],
+            attention_mask=batch["attention_mask"],
+            decoder_input_ids=batch["decoder_input_ids"],
+            labels=batch["labels"],
+        )
+        losses.append(float(outputs["loss"].item()))
+    return sum(losses) / max(1, len(losses))
+
+
+@torch.no_grad()
+def evaluate_generation(
+    model,
+    pairs,
+    tokenizer,
+    cfg: dict,
+    device: torch.device,
+    limit: int,
+    generation_overrides: dict | None = None,
+) -> tuple[dict[str, float], list[dict[str, str]]]:
+    rows: list[dict[str, str]] = []
+    model.encoder_call_count = 0
+    total_em = 0.0
+    total_f1 = 0.0
+    total_source_em = 0.0
+    total_source_f1 = 0.0
+    generation_cfg = {**cfg.get("generation", {}), **(generation_overrides or {})}
+
+    for pair in tqdm(pairs[:limit], desc="generate", leave=False):
+        batch = tokenizer(
+            pair.source,
+            max_length=int(cfg["data"]["source_max_length"]),
+            truncation=True,
+            padding="max_length",
+            return_tensors="pt",
+        )
+        generated = model.generate(
+            input_ids=batch["input_ids"].to(device),
+            attention_mask=batch["attention_mask"].to(device),
+            max_new_tokens=int(generation_cfg.get("max_new_tokens", 64)),
+            do_sample=bool(generation_cfg.get("do_sample", False)),
+            temperature=float(generation_cfg.get("temperature", 1.0)),
+            top_k=int(generation_cfg.get("top_k", 0)),
+            top_p=float(generation_cfg.get("top_p", 1.0)),
+            repetition_penalty=float(generation_cfg.get("repetition_penalty", 1.0)),
+            no_repeat_ngram_size=int(generation_cfg.get("no_repeat_ngram_size", 0)),
+        )
+        prediction = tokenizer.decode(generated[0], skip_special_tokens=True)
+        em = exact_match(prediction, pair.target)
+        f1 = token_f1(prediction, pair.target)
+        source_em = exact_match(pair.source, pair.target)
+        source_f1 = token_f1(pair.source, pair.target)
+        total_em += em
+        total_f1 += f1
+        total_source_em += source_em
+        total_source_f1 += source_f1
+        if len(rows) < int(cfg["generation"].get("num_samples", 5)):
+            rows.append(
+                {
+                    "source": pair.source,
+                    "target": pair.target,
+                    "prediction": prediction,
+                    "exact_match": f"{em:.3f}",
+                    "token_f1": f"{f1:.3f}",
+                }
+            )
+
+    denom = max(1, limit)
+    metrics = {
+        "generation_examples": float(limit),
+        "exact_match": total_em / denom,
+        "token_f1": total_f1 / denom,
+        "source_copy_exact_match": total_source_em / denom,
+        "source_copy_token_f1": total_source_f1 / denom,
+        "encoder_calls_per_generation": model.encoder_call_count / denom,
+    }
+    metrics["token_f1_gain_over_source_copy"] = (
+        metrics["token_f1"] - metrics["source_copy_token_f1"]
+    )
+    return metrics, rows
+
+
+def write_report(
+    report_path: Path,
+    config_path: str,
+    checkpoint: str,
+    cfg: dict,
+    metrics: dict[str, float],
+    samples: list[dict[str, str]],
+) -> None:
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Experiment Evaluation Report",
+        "",
+        "## Run",
+        "",
+        f"- Config: `{config_path}`",
+        f"- Checkpoint: `{checkpoint}`",
+        f"- Data source: `{cfg['data']['source']}`",
+        f"- Encoder: `{cfg['model']['encoder_name']}`",
+        f"- Decoder layers: `{cfg['model']['decoder_layers']}`",
+        f"- Decoder heads: `{cfg['model']['decoder_heads']}`",
+        f"- Encoder frozen: `true`",
+        f"- Decoder embedding init from encoder: `{cfg['model'].get('init_decoder_embeddings_from_encoder', True)}`",
+        f"- Token embeddings tied: `{cfg['model'].get('tie_token_embeddings', True)}`",
+        f"- Cross-attention enabled: `{cfg['model'].get('use_cross_attention', True)}`",
+        "",
+        "## Metrics",
+        "",
+        "| Metric | Value |",
+        "| --- | ---: |",
+    ]
+    for key, value in metrics.items():
+        if key.endswith("loss"):
+            display = f"{value:.4f}"
+        elif key.endswith("perplexity"):
+            display = f"{value:.2f}"
+        else:
+            display = f"{value:.4f}"
+        lines.append(f"| `{key}` | {display} |")
+
+    lines.extend(["", "## Samples", ""])
+    for idx, sample in enumerate(samples, start=1):
+        lines.extend(
+            [
+                f"### Sample {idx}",
+                "",
+                f"- Source: `{sample['source']}`",
+                f"- Target: `{sample['target']}`",
+                f"- Prediction: `{sample['prediction']}`",
+                f"- Exact match: `{sample['exact_match']}`",
+                f"- Token F1: `{sample['token_f1']}`",
+                "",
+            ]
+        )
+    report_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--checkpoint", required=True)
+    parser.add_argument("--split", default="validation", choices=["train", "validation"])
+    parser.add_argument("--device", default=None)
+    parser.add_argument("--generation-limit", type=int, default=64)
+    parser.add_argument("--do-sample", action="store_true")
+    parser.add_argument("--temperature", type=float, default=None)
+    parser.add_argument("--top-k", type=int, default=None)
+    parser.add_argument("--top-p", type=float, default=None)
+    parser.add_argument("--repetition-penalty", type=float, default=None)
+    parser.add_argument("--no-repeat-ngram-size", type=int, default=None)
+    parser.add_argument("--disable-cross-attention", action="store_true")
+    parser.add_argument("--report", default=None)
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
+    if args.disable_cross_attention:
+        cfg["model"]["use_cross_attention"] = False
+    device = resolve_device(args.device or cfg["training"]["device"])
+    tokenizer = AutoTokenizer.from_pretrained(cfg["model"]["encoder_name"])
+    model = load_model(cfg, args.checkpoint, tokenizer, device)
+    torch.manual_seed(int(cfg["seed"]))
+
+    pairs = build_pairs_from_config(
+        cfg=cfg,
+        seed=int(cfg["seed"]),
+        mask_token=tokenizer.mask_token or "[MASK]",
+        split=args.split,
+    )
+    dataset = DenoisingDataset(
+        pairs,
+        tokenizer=tokenizer,
+        source_max_length=int(cfg["data"]["source_max_length"]),
+        target_max_length=int(cfg["data"]["target_max_length"]),
+    )
+    loader = DataLoader(
+        dataset,
+        batch_size=int(cfg["training"]["batch_size"]),
+        shuffle=False,
+    )
+    loss = evaluate_loss(model, loader, device)
+    generation_limit = min(args.generation_limit, len(pairs))
+    generation_overrides = {
+        key: value
+        for key, value in {
+            "do_sample": args.do_sample if args.do_sample else None,
+            "temperature": args.temperature,
+            "top_k": args.top_k,
+            "top_p": args.top_p,
+            "repetition_penalty": args.repetition_penalty,
+            "no_repeat_ngram_size": args.no_repeat_ngram_size,
+        }.items()
+        if value is not None
+    }
+    generation_metrics, samples = evaluate_generation(
+        model=model,
+        pairs=pairs,
+        tokenizer=tokenizer,
+        cfg=cfg,
+        device=device,
+        limit=generation_limit,
+        generation_overrides=generation_overrides,
+    )
+    metrics = {
+        "validation_loss" if args.split == "validation" else "train_loss": loss,
+        "perplexity": math.exp(min(loss, 20)),
+        **generation_metrics,
+    }
+    for key, value in generation_overrides.items():
+        metrics[f"decode_{key}"] = float(value) if isinstance(value, (int, float, bool)) else value
+    print(json.dumps(metrics, indent=2, sort_keys=True))
+
+    report = args.report
+    if report is None:
+        checkpoint_name = Path(args.checkpoint).stem
+        config_name = Path(args.config).stem
+        report = f"reports/{config_name}_{checkpoint_name}_{args.split}.md"
+    write_report(
+        report_path=Path(report),
+        config_path=args.config,
+        checkpoint=args.checkpoint,
+        cfg=cfg,
+        metrics=metrics,
+        samples=samples,
+    )
+    print(f"wrote_report={report}")
+
+
+if __name__ == "__main__":
+    main()

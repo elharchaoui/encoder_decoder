@@ -1,0 +1,23 @@
+[project]
+name = "encoder-decoder"
+version = "0.1.0"
+description = "Frozen encoder memory with a small autoregressive decoder experiment."
+readme = "implemented_experiment_plan.md"
+requires-python = ">=3.10"
+dependencies = [
+    "accelerate>=0.30.0",
+    "datasets>=2.19.0",
+    "pyyaml>=6.0.1",
+    "torch>=2.3.0",
+    "tqdm>=4.66.0",
+    "transformers>=4.41.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
