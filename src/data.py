@@ -36,6 +36,23 @@ class TextPair:
     target: str
 
 
+@dataclass(frozen=True)
+class SpanTargetConfig:
+    sentinel_token: str = "[unused1]"
+    min_span_length: int = 2
+    max_span_length: int = 8
+    min_left_words: int = 2
+    min_right_words: int = 2
+
+
+def span_target_config_from_dict(values: dict | None) -> SpanTargetConfig:
+    if not values:
+        return SpanTargetConfig()
+    allowed = set(SpanTargetConfig.__dataclass_fields__)
+    filtered = {key: value for key, value in values.items() if key in allowed}
+    return SpanTargetConfig(**filtered)
+
+
 def build_synthetic_pairs(
     count: int,
     seed: int,
@@ -85,6 +102,34 @@ def _split_sentence_like_chunks(text: str, min_words: int, max_words: int) -> li
     return chunks
 
 
+def make_span_target_pair(
+    text: str,
+    rng: random.Random,
+    config: SpanTargetConfig | None = None,
+) -> TextPair | None:
+    config = config or SpanTargetConfig()
+    words = normalize_text(text).split()
+    min_required = config.min_left_words + config.min_span_length + config.min_right_words
+    if len(words) < min_required:
+        return None
+    max_span = min(
+        config.max_span_length,
+        len(words) - config.min_left_words - config.min_right_words,
+    )
+    if max_span < config.min_span_length:
+        return None
+    span_len = rng.randint(config.min_span_length, max_span)
+    start_min = config.min_left_words
+    start_max = len(words) - config.min_right_words - span_len
+    if start_max < start_min:
+        return None
+    start = rng.randint(start_min, start_max)
+    end = start + span_len
+    source_words = words[:start] + [config.sentinel_token] + words[end:]
+    target_words = words[start:end]
+    return TextPair(source=" ".join(source_words), target=" ".join(target_words))
+
+
 def build_wikitext_pairs(
     count: int,
     seed: int,
@@ -93,6 +138,8 @@ def build_wikitext_pairs(
     dataset_name: str = "Salesforce/wikitext",
     dataset_config: str = "wikitext-2-raw-v1",
     corruption_config: CorruptionConfig | None = None,
+    objective: str = "full_reconstruction",
+    span_target_config: SpanTargetConfig | None = None,
     min_words: int = 8,
     max_words: int = 48,
 ) -> list[TextPair]:
@@ -120,24 +167,45 @@ def build_wikitext_pairs(
         raise RuntimeError(
             f"Requested {count} examples from {split}, but only found {len(selected)} usable lines."
         )
-    return [
-        TextPair(
-            source=corrupt_text(
+    pairs: list[TextPair] = []
+    for target in selected:
+        if objective == "span_target":
+            pair = make_span_target_pair(
                 target,
                 rng,
-                mask_token=mask_token,
-                config=corruption_config,
-            ),
-            target=target,
+                config=span_target_config,
+            )
+            if pair is None:
+                continue
+            pairs.append(pair)
+            continue
+        if objective == "full_reconstruction":
+            pairs.append(
+                TextPair(
+                    source=corrupt_text(
+                        target,
+                        rng,
+                        mask_token=mask_token,
+                        config=corruption_config,
+                    ),
+                    target=target,
+                )
+            )
+            continue
+        raise ValueError(f"Unsupported data.objective: {objective}")
+    if len(pairs) < count:
+        raise RuntimeError(
+            f"Requested {count} examples from {split}, but only built {len(pairs)} pairs."
         )
-        for target in selected
-    ]
+    return pairs[:count]
 
 
 def build_pairs_from_config(cfg: dict, seed: int, mask_token: str, split: str) -> list[TextPair]:
     data_cfg = cfg["data"]
     source = data_cfg.get("source", "synthetic")
+    objective = data_cfg.get("objective", "full_reconstruction")
     corruption_config = corruption_config_from_dict(data_cfg.get("corruption"))
+    span_target_config = span_target_config_from_dict(data_cfg.get("span_target"))
     count_key = "train_examples" if split == "train" else "validation_examples"
     count = int(data_cfg[count_key])
     if source == "synthetic":
@@ -158,6 +226,8 @@ def build_pairs_from_config(cfg: dict, seed: int, mask_token: str, split: str) -
             dataset_name=data_cfg.get("dataset_name", "Salesforce/wikitext"),
             dataset_config=data_cfg.get("dataset_config", "wikitext-2-raw-v1"),
             corruption_config=corruption_config,
+            objective=objective,
+            span_target_config=span_target_config,
             min_words=int(data_cfg.get("min_words", 8)),
             max_words=int(data_cfg.get("max_words", 48)),
         )

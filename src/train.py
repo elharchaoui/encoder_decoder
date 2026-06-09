@@ -155,6 +155,8 @@ def main() -> None:
     optimizer.zero_grad(set_to_none=True)
     step = 0
     running_loss = 0.0
+    best_val_loss = float("inf")
+    best_step = 0
     progress = tqdm(total=max_steps, desc="training")
     while step < max_steps:
         for batch in train_loader:
@@ -189,6 +191,11 @@ def main() -> None:
             if step % eval_every == 0:
                 val_loss = evaluate(model, val_loader, device)
                 print(f"step={step} val_loss={val_loss:.4f} val_ppl={math.exp(min(val_loss, 20)):.2f}")
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_step = step
+                    torch.save(model.state_dict(), output_dir / "best.pt")
+                    print(f"step={step} saved_best val_loss={best_val_loss:.4f}")
 
             if step % save_every == 0:
                 torch.save(model.state_dict(), output_dir / f"step_{step}.pt")
@@ -197,6 +204,8 @@ def main() -> None:
                 break
     progress.close()
     torch.save(model.state_dict(), output_dir / "final.pt")
+    if best_step:
+        print(f"best_step={best_step} best_val_loss={best_val_loss:.4f}")
 
 
 if __name__ == "__main__":

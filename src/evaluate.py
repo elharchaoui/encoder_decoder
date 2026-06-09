@@ -55,6 +55,26 @@ def exact_match(prediction: str, target: str) -> float:
     return float(normalize_text(prediction) == normalize_text(target))
 
 
+def source_copy_ratio(prediction: str, source: str) -> float:
+    pred_tokens = normalize_text(prediction).split()
+    source_tokens = set(normalize_text(source).split())
+    if not pred_tokens:
+        return 0.0
+    copied = sum(1 for token in pred_tokens if token in source_tokens)
+    return copied / len(pred_tokens)
+
+
+def target_length_bucket(target: str) -> str:
+    length = len(normalize_text(target).split())
+    if length <= 1:
+        return "target_len_1"
+    if length <= 3:
+        return "target_len_2_3"
+    if length <= 6:
+        return "target_len_4_6"
+    return "target_len_7_plus"
+
+
 def load_model(cfg: dict, checkpoint: str, tokenizer, device: torch.device):
     model_cfg = cfg["model"]
     model = FrozenEncoderAutoregressiveDecoder(
@@ -111,6 +131,11 @@ def evaluate_generation(
     total_f1 = 0.0
     total_source_em = 0.0
     total_source_f1 = 0.0
+    total_source_target_f1 = 0.0
+    total_prediction_source_f1 = 0.0
+    total_prediction_source_copy_ratio = 0.0
+    bucket_f1_totals: dict[str, float] = {}
+    bucket_counts: dict[str, int] = {}
     generation_cfg = {**cfg.get("generation", {}), **(generation_overrides or {})}
 
     for pair in tqdm(pairs[:limit], desc="generate", leave=False):
@@ -131,16 +156,28 @@ def evaluate_generation(
             top_p=float(generation_cfg.get("top_p", 1.0)),
             repetition_penalty=float(generation_cfg.get("repetition_penalty", 1.0)),
             no_repeat_ngram_size=int(generation_cfg.get("no_repeat_ngram_size", 0)),
+            num_beams=int(generation_cfg.get("num_beams", 1)),
+            length_penalty=float(generation_cfg.get("length_penalty", 1.0)),
+            min_new_tokens=int(generation_cfg.get("min_new_tokens", 0)),
         )
         prediction = tokenizer.decode(generated[0], skip_special_tokens=True)
         em = exact_match(prediction, pair.target)
         f1 = token_f1(prediction, pair.target)
         source_em = exact_match(pair.source, pair.target)
         source_f1 = token_f1(pair.source, pair.target)
+        source_target_f1 = token_f1(pair.source, pair.target)
+        prediction_source_f1 = token_f1(prediction, pair.source)
+        prediction_source_ratio = source_copy_ratio(prediction, pair.source)
         total_em += em
         total_f1 += f1
         total_source_em += source_em
         total_source_f1 += source_f1
+        total_source_target_f1 += source_target_f1
+        total_prediction_source_f1 += prediction_source_f1
+        total_prediction_source_copy_ratio += prediction_source_ratio
+        bucket = target_length_bucket(pair.target)
+        bucket_f1_totals[bucket] = bucket_f1_totals.get(bucket, 0.0) + f1
+        bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
         if len(rows) < int(cfg["generation"].get("num_samples", 5)):
             rows.append(
                 {
@@ -149,6 +186,7 @@ def evaluate_generation(
                     "prediction": prediction,
                     "exact_match": f"{em:.3f}",
                     "token_f1": f"{f1:.3f}",
+                    "prediction_source_copy_ratio": f"{prediction_source_ratio:.3f}",
                 }
             )
 
@@ -159,8 +197,14 @@ def evaluate_generation(
         "token_f1": total_f1 / denom,
         "source_copy_exact_match": total_source_em / denom,
         "source_copy_token_f1": total_source_f1 / denom,
+        "source_target_token_f1": total_source_target_f1 / denom,
+        "prediction_source_token_f1": total_prediction_source_f1 / denom,
+        "prediction_source_copy_ratio": total_prediction_source_copy_ratio / denom,
         "encoder_calls_per_generation": model.encoder_call_count / denom,
     }
+    for bucket, total in sorted(bucket_f1_totals.items()):
+        metrics[f"{bucket}_token_f1"] = total / max(1, bucket_counts[bucket])
+        metrics[f"{bucket}_examples"] = float(bucket_counts[bucket])
     metrics["token_f1_gain_over_source_copy"] = (
         metrics["token_f1"] - metrics["source_copy_token_f1"]
     )
@@ -184,6 +228,7 @@ def write_report(
         f"- Config: `{config_path}`",
         f"- Checkpoint: `{checkpoint}`",
         f"- Data source: `{cfg['data']['source']}`",
+        f"- Data objective: `{cfg['data'].get('objective', 'full_reconstruction')}`",
         f"- Encoder: `{cfg['model']['encoder_name']}`",
         f"- Decoder layers: `{cfg['model']['decoder_layers']}`",
         f"- Decoder heads: `{cfg['model']['decoder_heads']}`",
@@ -217,6 +262,7 @@ def write_report(
                 f"- Prediction: `{sample['prediction']}`",
                 f"- Exact match: `{sample['exact_match']}`",
                 f"- Token F1: `{sample['token_f1']}`",
+                f"- Prediction-source copy ratio: `{sample.get('prediction_source_copy_ratio', 'n/a')}`",
                 "",
             ]
         )
@@ -236,6 +282,9 @@ def main() -> None:
     parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--repetition-penalty", type=float, default=None)
     parser.add_argument("--no-repeat-ngram-size", type=int, default=None)
+    parser.add_argument("--num-beams", type=int, default=None)
+    parser.add_argument("--length-penalty", type=float, default=None)
+    parser.add_argument("--min-new-tokens", type=int, default=None)
     parser.add_argument("--disable-cross-attention", action="store_true")
     parser.add_argument("--report", default=None)
     args = parser.parse_args()
@@ -276,9 +325,14 @@ def main() -> None:
             "top_p": args.top_p,
             "repetition_penalty": args.repetition_penalty,
             "no_repeat_ngram_size": args.no_repeat_ngram_size,
+            "num_beams": args.num_beams,
+            "length_penalty": args.length_penalty,
+            "min_new_tokens": args.min_new_tokens,
         }.items()
         if value is not None
     }
+    if args.do_sample and args.num_beams is None:
+        generation_overrides["num_beams"] = 1
     generation_metrics, samples = evaluate_generation(
         model=model,
         pairs=pairs,

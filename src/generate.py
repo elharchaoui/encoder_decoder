@@ -21,10 +21,16 @@ def main() -> None:
     parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--repetition-penalty", type=float, default=None)
     parser.add_argument("--no-repeat-ngram-size", type=int, default=None)
+    parser.add_argument("--num-beams", type=int, default=None)
+    parser.add_argument("--length-penalty", type=float, default=None)
+    parser.add_argument("--min-new-tokens", type=int, default=None)
     args = parser.parse_args()
 
     with open(args.config, "r", encoding="utf-8") as handle:
         cfg = yaml.safe_load(handle)
+    generation_cfg = dict(cfg["generation"])
+    if args.do_sample and args.num_beams is None:
+        generation_cfg["num_beams"] = 1
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("Requested cuda, but CUDA is not available.")
     device = torch.device(args.device)
@@ -58,20 +64,31 @@ def main() -> None:
     generated = model.generate(
         input_ids=batch["input_ids"].to(device),
         attention_mask=batch["attention_mask"].to(device),
-        max_new_tokens=int(cfg["generation"]["max_new_tokens"]),
-        do_sample=bool(args.do_sample or cfg["generation"].get("do_sample", False)),
-        temperature=float(args.temperature or cfg["generation"].get("temperature", 1.0)),
-        top_k=int(args.top_k if args.top_k is not None else cfg["generation"].get("top_k", 0)),
-        top_p=float(args.top_p if args.top_p is not None else cfg["generation"].get("top_p", 1.0)),
+        max_new_tokens=int(generation_cfg["max_new_tokens"]),
+        do_sample=bool(args.do_sample or generation_cfg.get("do_sample", False)),
+        temperature=float(args.temperature or generation_cfg.get("temperature", 1.0)),
+        top_k=int(args.top_k if args.top_k is not None else generation_cfg.get("top_k", 0)),
+        top_p=float(args.top_p if args.top_p is not None else generation_cfg.get("top_p", 1.0)),
         repetition_penalty=float(
             args.repetition_penalty
             if args.repetition_penalty is not None
-            else cfg["generation"].get("repetition_penalty", 1.0)
+            else generation_cfg.get("repetition_penalty", 1.0)
         ),
         no_repeat_ngram_size=int(
             args.no_repeat_ngram_size
             if args.no_repeat_ngram_size is not None
-            else cfg["generation"].get("no_repeat_ngram_size", 0)
+            else generation_cfg.get("no_repeat_ngram_size", 0)
+        ),
+        num_beams=int(args.num_beams if args.num_beams is not None else generation_cfg.get("num_beams", 1)),
+        length_penalty=float(
+            args.length_penalty
+            if args.length_penalty is not None
+            else generation_cfg.get("length_penalty", 1.0)
+        ),
+        min_new_tokens=int(
+            args.min_new_tokens
+            if args.min_new_tokens is not None
+            else generation_cfg.get("min_new_tokens", 0)
         ),
     )
     print(tokenizer.decode(generated[0], skip_special_tokens=True))

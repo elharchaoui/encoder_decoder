@@ -222,9 +222,28 @@ class FrozenEncoderAutoregressiveDecoder(nn.Module):
         top_p: float = 1.0,
         repetition_penalty: float = 1.0,
         no_repeat_ngram_size: int = 0,
+        num_beams: int = 1,
+        length_penalty: float = 1.0,
+        min_new_tokens: int = 0,
     ) -> torch.Tensor:
         self.eval()
         encoder_hidden_states = self.encode(input_ids=input_ids, attention_mask=attention_mask)
+        if num_beams > 1:
+            if do_sample:
+                raise ValueError("Beam search does not support sampling in this implementation.")
+            if input_ids.size(0) != 1:
+                raise ValueError("Beam search currently supports batch_size=1.")
+            return self._generate_beam_search(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                encoder_hidden_states=encoder_hidden_states,
+                max_new_tokens=max_new_tokens,
+                num_beams=num_beams,
+                length_penalty=length_penalty,
+                repetition_penalty=repetition_penalty,
+                no_repeat_ngram_size=no_repeat_ngram_size,
+                min_new_tokens=min_new_tokens,
+            )
         generated = torch.full(
             (input_ids.size(0), 1),
             self.config.bos_token_id,
@@ -248,6 +267,8 @@ class FrozenEncoderAutoregressiveDecoder(nn.Module):
                 generated,
                 no_repeat_ngram_size=no_repeat_ngram_size,
             )
+            if generated.size(1) - 1 < min_new_tokens:
+                next_logits[:, self.config.eos_token_id] = -torch.inf
             if do_sample:
                 scaled_logits = next_logits / max(temperature, 1e-6)
                 filtered_logits = self._top_k_top_p_filter(
@@ -266,3 +287,88 @@ class FrozenEncoderAutoregressiveDecoder(nn.Module):
             if torch.all(next_token.eq(self.config.eos_token_id)):
                 break
         return generated
+
+    def _length_normalized_score(
+        self,
+        score: float,
+        sequence_length: int,
+        length_penalty: float,
+    ) -> float:
+        generated_length = max(1, sequence_length - 1)
+        return score / (generated_length ** length_penalty)
+
+    def _generate_beam_search(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        encoder_hidden_states: torch.Tensor,
+        max_new_tokens: int,
+        num_beams: int,
+        length_penalty: float,
+        repetition_penalty: float,
+        no_repeat_ngram_size: int,
+        min_new_tokens: int,
+    ) -> torch.Tensor:
+        beams: list[tuple[torch.Tensor, float, bool]] = [
+            (
+                torch.tensor(
+                    [[self.config.bos_token_id]],
+                    dtype=torch.long,
+                    device=input_ids.device,
+                ),
+                0.0,
+                False,
+            )
+        ]
+        for _ in range(max_new_tokens):
+            candidates: list[tuple[torch.Tensor, float, bool]] = []
+            for sequence, score, finished in beams:
+                if finished:
+                    candidates.append((sequence, score, True))
+                    continue
+                logits = self.decode(
+                    decoder_input_ids=sequence,
+                    encoder_hidden_states=encoder_hidden_states,
+                    encoder_attention_mask=attention_mask,
+                )
+                next_logits = logits[:, -1]
+                next_logits = self._apply_repetition_penalty(
+                    next_logits,
+                    sequence,
+                    repetition_penalty=repetition_penalty,
+                )
+                next_logits = self._apply_no_repeat_ngram(
+                    next_logits,
+                    sequence,
+                    no_repeat_ngram_size=no_repeat_ngram_size,
+                )
+                if sequence.size(1) - 1 < min_new_tokens:
+                    next_logits[:, self.config.eos_token_id] = -torch.inf
+                log_probs = torch.log_softmax(next_logits, dim=-1)
+                top_scores, top_tokens = torch.topk(log_probs, k=num_beams, dim=-1)
+                for token_score, token_id in zip(top_scores[0], top_tokens[0], strict=True):
+                    next_token = token_id.view(1, 1)
+                    next_sequence = torch.cat([sequence, next_token], dim=1)
+                    next_score = score + float(token_score.item())
+                    next_finished = int(token_id.item()) == self.config.eos_token_id
+                    candidates.append((next_sequence, next_score, next_finished))
+            candidates.sort(
+                key=lambda item: self._length_normalized_score(
+                    item[1],
+                    item[0].size(1),
+                    length_penalty=length_penalty,
+                ),
+                reverse=True,
+            )
+            beams = candidates[:num_beams]
+            if all(finished for _, _, finished in beams):
+                break
+        best_sequence, _, _ = max(
+            beams,
+            key=lambda item: self._length_normalized_score(
+                item[1],
+                item[0].size(1),
+                length_penalty=length_penalty,
+            ),
+        )
+        return best_sequence

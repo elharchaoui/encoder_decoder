@@ -222,6 +222,86 @@ Interpretation:
 - Variant A is not just acting as a standalone language model.
 - The encoder signal helps, but it is not yet strong enough to beat source-copy.
 
+### Middle-Corruption Debug Run
+
+Change made:
+
+- Added `configs/frozen_bert_small_decoder_wikitext_middle_debug.yaml`.
+- Reduced corruption strength relative to the clean debug setup.
+- Added automatic `best.pt` checkpoint saving based on validation loss.
+- Added beam-search generation with `num_beams`, `length_penalty`, and `min_new_tokens`.
+- Added CLI handling so `--do-sample` uses `num_beams=1` unless beams are explicitly requested.
+
+Why:
+
+- The aggressive corruption setup made the task difficult for a randomly initialized autoregressive decoder.
+- A middle corruption level should reveal whether the model can improve recovery when the target is easier.
+- Best-checkpoint saving avoids accidentally evaluating a worse final checkpoint after overfitting.
+- Beam search tests whether deterministic decoding can improve over controlled sampling.
+
+Training behavior:
+
+- Best validation checkpoint was step 1000.
+- Best validation loss was `6.3145`.
+- Best validation perplexity was `552.51`.
+
+Generation results:
+
+| Decode setup | Token F1 | Source-copy F1 | Comment |
+| --- | ---: | ---: | --- |
+| Beam search: `num_beams=4`, length penalty `0.8`, min new tokens `8` | `0.2072` | `0.7049` | Worse than controlled sampling |
+| Sampling: temperature `0.8`, top-k `50`, top-p `0.9`, repetition penalty `1.2`, no-repeat 3-gram | `0.2280` | `0.7049` | Better decoder choice for now |
+
+Interpretation:
+
+- Middle corruption improved teacher-forced validation loss compared with the stronger corruption runs.
+- Middle corruption also made source-copy much stronger: source-copy F1 rose from `0.5024` to `0.7049`.
+- This confirms the task became easier, but not more useful for proving the model beats copying.
+- Beam search did not help the current model; controlled sampling remains better.
+- The next corruption setup should reduce source-copy without making the target unrecoverable. The best candidate is not simply "less corruption"; it is targeted corruption that removes copy shortcuts while preserving enough semantic signal.
+
+### Span-Target Objective Run
+
+Change made:
+
+- Added `objective: span_target` to the WikiText data path.
+- Added `make_span_target_pair`, which replaces a contiguous span with `[unused1]` and uses only the removed span as the decoder target.
+- Added `configs/frozen_bert_small_decoder_wikitext_span_target_debug.yaml`.
+- Added `configs/decoder_only_wikitext_span_target_debug.yaml`.
+- Added copied-source diagnostics:
+  - `source_target_token_f1`,
+  - `prediction_source_token_f1`,
+  - `prediction_source_copy_ratio`.
+
+Why:
+
+- Academic denoising work such as MASS suggests predicting the missing fragment instead of reconstructing the entire source.
+- This removes the source-copy trap from full reconstruction.
+- It directly tests whether frozen BERT memory helps an autoregressive decoder generate absent content.
+
+Training behavior:
+
+| Run | Best step | Best validation loss | Best perplexity |
+| --- | ---: | ---: | ---: |
+| Span-target Variant A | `300` | `6.6792` | `795.67` |
+| Span-target decoder-only | `300` | `6.7021` | `814.12` |
+
+Generation results:
+
+| Model / Control | Token F1 | Source-copy F1 | Prediction-source copy ratio |
+| --- | ---: | ---: | ---: |
+| Span-target Variant A | `0.0697` | `0.0532` | `0.3190` |
+| Span-target Variant A, no cross-attention at eval | `0.0632` | `0.0532` | `0.2227` |
+| Span-target decoder-only | `0.0686` | `0.0532` | `0.2865` |
+
+Interpretation:
+
+- The span-target objective successfully weakens source-copy. Source-copy token F1 drops to `0.0532`.
+- Variant A beats source-copy, but only by `0.0166` token F1.
+- Cross-attention gives only a tiny gain over no-cross-attention and decoder-only controls.
+- The benchmark is now cleaner, but the current randomly initialized decoder is still too weak or too undertrained to use encoder memory meaningfully.
+- This points toward decoder initialization and objective scale, not more full-reconstruction corruption tuning.
+
 ### WikiText Overfit Run
 
 The 128-example WikiText overfit run succeeded.
@@ -259,14 +339,17 @@ Interpretation:
 - The evaluation loop generates one sample at a time, so it is slower than batched teacher-forced validation.
 - The stronger corruption config reduces source-copy strength, but it may now be too destructive for a 750-step debug run.
 - The decoder-only and no-cross-attention controls confirm encoder memory helps, but they do not solve the source-copy gap.
+- The middle corruption run is easier in loss terms but too favorable to source-copy.
+- Beam search exists now, but it did not improve generation on the middle debug checkpoint.
+- The span-target objective removes most of the source-copy baseline but exposes a new issue: cross-attention is only a small gain over decoder-only.
 
 ## Next Recommended Steps
 
-1. Add a less destructive middle corruption config and compare source-copy F1 against model F1.
-2. Add better autoregressive decoding support, especially beam search and length controls.
-3. Save and evaluate the best validation checkpoint automatically instead of relying on fixed step checkpoints.
-4. Consider pretrained autoregressive decoder initialization if the randomly initialized decoder remains weak.
-5. Avoid larger training runs until the model beats source-copy or shows a much stronger encoder-memory gain.
+1. Try a pretrained decoder initialization or a smaller pretrained seq2seq upper-bound.
+2. Add an easier span-target curriculum: 1-3 token spans before 2-6 token spans.
+3. Add target length bucket metrics to verify whether failures are concentrated on longer missing spans.
+4. Add multiple-choice/reranking evaluation to check whether encoder memory can score the right missing span even when generation is weak.
+5. Avoid larger random-decoder runs until cross-attention clearly beats decoder-only.
 
 ## Current Decision
 
@@ -278,4 +361,4 @@ Reason:
 - WikiText overfit confirms the model can learn real examples.
 - WikiText validation and generation metrics show the current data/decoding setup is not good enough for a meaningful scale-up.
 
-The decoder-only control and cross-attention ablation are complete. They show that the encoder contributes useful information, but not enough. The next engineering step should be a cleaner middle-difficulty corruption setup plus better decoding/checkpoint selection before any larger run.
+The decoder-only control, cross-attention ablation, middle-corruption run, best-checkpoint saving, beam-search decoding, and span-target objective are complete. Span-target fixes the benchmark shape by removing most source-copy advantage, but it also shows that the current random decoder barely benefits from encoder memory. The next engineering step should test decoder initialization or a span curriculum, not more full-reconstruction corruption tuning.
