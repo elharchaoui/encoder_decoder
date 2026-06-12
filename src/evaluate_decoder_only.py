@@ -12,7 +12,7 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from src.data import build_pairs_from_config
-from src.evaluate import exact_match, source_copy_ratio, token_f1
+from src.evaluate import compute_bertscore, exact_match, source_copy_ratio, token_f1
 from src.train import resolve_device
 
 
@@ -117,6 +117,7 @@ def main() -> None:
     parser.add_argument("--max-new-tokens", type=int, default=None)
     parser.add_argument("--min-new-tokens", type=int, default=1)
     parser.add_argument("--report", default=None)
+    parser.add_argument("--bertscore", action="store_true", help="Compute BERTScore after generation (adds ~2min)")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -148,6 +149,8 @@ def main() -> None:
     total_pred_source_copy = 0.0
     prediction_counts: Counter[str] = Counter()
     prediction_lengths: list[int] = []
+    all_predictions: list[str] = []
+    all_references: list[str] = []
     rows: list[dict[str, str]] = []
 
     for pair in tqdm(pairs[:limit], desc="generate"):
@@ -162,6 +165,8 @@ def main() -> None:
             num_beams=num_beams,
             device=device,
         )
+        all_predictions.append(prediction)
+        all_references.append(pair.target)
         em = exact_match(prediction, pair.target)
         f1 = token_f1(prediction, pair.target)
         source_f1 = token_f1(pair.source, pair.target)
@@ -200,6 +205,8 @@ def main() -> None:
         ),
         "num_beams": float(num_beams),
     }
+    if args.bertscore:
+        metrics.update(compute_bertscore(all_predictions, all_references))
     print(json.dumps(metrics, indent=2, sort_keys=True))
 
     report = args.report

@@ -92,42 +92,67 @@ def build_full_context_teacher(cfg: dict, decoder_tokenizer, device: torch.devic
 
 
 @torch.no_grad()
-def teacher_logits_for_batch(
+def teacher_logits_batched(
     teacher,
-    batch: dict,
     source_texts: list[str],
     target_texts: list[str],
     tokenizer,
     source_max_length: int,
     target_max_length: int,
     device: torch.device,
-    prompt_prefix: str = "",
+    source_prefix: str = "",
     answer_prefix: str = " answer: ",
-) -> torch.Tensor:
-    """Compute teacher logits over answer tokens using full source+target context."""
-    all_logits: list[torch.Tensor] = []
-    for src, tgt in zip(source_texts, target_texts):
-        prompt = f"{prompt_prefix}{src}{answer_prefix}"
-        full = f"{prompt}{tgt}"
-        prompt_ids = tokenizer(prompt, add_special_tokens=False, return_tensors="pt")["input_ids"].squeeze(0)
-        full_ids = tokenizer(
-            full,
-            add_special_tokens=False,
-            truncation=True,
-            max_length=source_max_length + target_max_length,
-            return_tensors="pt",
-        )["input_ids"].squeeze(0).to(device)
-        out = teacher(input_ids=full_ids.unsqueeze(0))
-        # logits over answer positions: from len(prompt_ids) to end
-        prompt_len = min(len(prompt_ids), full_ids.shape[0] - 1)
-        answer_logits = out.logits[0, prompt_len - 1 : full_ids.shape[0] - 1, :]
-        all_logits.append(answer_logits)
-    # Pad to same answer length
-    max_ans = max(t.shape[0] for t in all_logits)
-    padded = torch.zeros(len(all_logits), max_ans, all_logits[0].shape[-1], device=device, dtype=all_logits[0].dtype)
-    for i, t in enumerate(all_logits):
-        padded[i, : t.shape[0]] = t
-    return padded
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Single batched teacher forward pass, returning logits aligned to answer tokens.
+
+    Returns:
+        teacher_logits: (B, T_max, vocab) — logit[b, t] predicts answer_token[b, t]
+        answer_mask:    (B, T_max) bool — True where answer token is real (not padding)
+    """
+    B = len(source_texts)
+
+    # Tokenize prompts (source_prefix + source + answer_prefix)
+    prompts = [f"{source_prefix}{src}{answer_prefix}" for src in source_texts]
+    prompt_enc = tokenizer(
+        prompts,
+        return_tensors="pt",
+        truncation=True,
+        max_length=source_max_length,
+        padding=True,
+        add_special_tokens=False,
+    )
+    prompt_ids = prompt_enc["input_ids"].to(device)            # (B, L_max)
+    prompt_mask = prompt_enc["attention_mask"].to(device)
+    prompt_lengths = prompt_mask.sum(dim=1)                    # (B,) actual lengths
+
+    # Tokenize answers
+    answer_enc = tokenizer(
+        target_texts,
+        return_tensors="pt",
+        truncation=True,
+        max_length=target_max_length,
+        padding=True,
+        add_special_tokens=False,
+    )
+    answer_ids = answer_enc["input_ids"].to(device)            # (B, T_max)
+    answer_mask = answer_enc["attention_mask"].to(device)
+
+    # Single forward pass on [prompt | answer]
+    full_ids = torch.cat([prompt_ids, answer_ids], dim=1)
+    full_mask = torch.cat([prompt_mask, answer_mask], dim=1)
+    out = teacher(input_ids=full_ids, attention_mask=full_mask)
+    logits = out.logits                                        # (B, L_max+T_max, vocab)
+
+    # Gather answer logits: position prompt_lengths[b]-1+t predicts answer_ids[b,t]
+    T_max = answer_ids.shape[1]
+    t_idx = torch.arange(T_max, device=device).unsqueeze(0)   # (1, T_max)
+    positions = (prompt_lengths - 1).unsqueeze(1) + t_idx     # (B, T_max)
+    positions = positions.clamp(0, logits.shape[1] - 1)
+
+    b_idx = torch.arange(B, device=device).unsqueeze(1).expand(B, T_max)
+    teacher_ans_logits = logits[b_idx, positions]              # (B, T_max, vocab)
+
+    return teacher_ans_logits, answer_mask.bool()
 
 
 @torch.no_grad()
@@ -171,9 +196,15 @@ def main() -> None:
 
     distill_weight = float(cfg["training"].get("distill_weight", 0.0))
     teacher = None
+    decoder_prefix_len = 0
     if distill_weight > 0.0:
         teacher = build_full_context_teacher(cfg, decoder_tokenizer, device)
+        decoder_prefix = cfg["model"].get("decoder_prefix", "")
+        decoder_prefix_len = len(
+            decoder_tokenizer(decoder_prefix, add_special_tokens=False)["input_ids"]
+        )
         print(f"distillation enabled: weight={distill_weight} teacher={cfg['model'].get('teacher_name', cfg['model']['decoder_name'])}")
+        print(f"decoder_prefix_len={decoder_prefix_len} (answer logits start at memory_tokens+{decoder_prefix_len})")
 
     mask_token = cfg["data"].get("span_target", {}).get("sentinel_token", "[unused1]")
     train_pairs = build_pairs_from_config(cfg=cfg, seed=seed, mask_token=mask_token, split="train")
@@ -260,33 +291,40 @@ def main() -> None:
                     kl_temp = float(cfg["training"].get("distill_temperature", 2.0))
                     source_max = int(cfg["data"]["source_max_length"])
                     target_max = int(cfg["data"]["target_max_length"])
-                    teacher_log = teacher_logits_for_batch(
+                    memory_len = int(cfg["model"].get("memory_tokens", 64))
+                    # Single batched teacher forward; logits aligned to answer tokens.
+                    # Teacher uses the same decoder_prefix as the student so the
+                    # conditioning context is matched.
+                    teacher_ans_logits, teacher_ans_mask = teacher_logits_batched(
                         teacher,
-                        batch,
                         list(source_texts),
                         list(target_texts),
                         decoder_tokenizer,
                         source_max,
                         target_max,
                         device,
-                        prompt_prefix=cfg["model"].get("source_prefix", ""),
+                        source_prefix=cfg["model"].get("source_prefix", ""),
                         answer_prefix=cfg["model"].get("decoder_prefix", " answer: "),
                     )
-                    # Student logits over answer tokens from prefix-memory output
+                    # Student answer logits: start AFTER memory tokens AND decoder prefix
+                    # student_logits[:, memory_len + decoder_prefix_len - 1 + t, :] predicts answer token t
                     student_logits = outputs.logits
-                    # Trim to matching answer length
-                    memory_len = int(cfg["model"].get("memory_tokens", 64))
-                    # student answer starts at memory_len + decoder_prefix_len
-                    # Use the last min(student, teacher) answer tokens
-                    ans_len = min(teacher_log.shape[1], student_logits.shape[1] - memory_len)
+                    s_start = memory_len + decoder_prefix_len - 1
+                    T_max = teacher_ans_logits.shape[1]
+                    T_student = student_logits.shape[1] - s_start
+                    ans_len = min(T_max, T_student)
                     if ans_len > 0:
-                        s_log = student_logits[:, memory_len: memory_len + ans_len, :]
-                        t_log = teacher_log[:, :ans_len, :]
-                        kl_loss = F.kl_div(
+                        s_log = student_logits[:, s_start : s_start + ans_len, :]
+                        t_log = teacher_ans_logits[:, :ans_len, :]
+                        # Mask out padding positions in KL loss
+                        valid = teacher_ans_mask[:, :ans_len]  # (B, ans_len)
+                        kl_per_pos = F.kl_div(
                             F.log_softmax(s_log / kl_temp, dim=-1),
                             F.softmax(t_log / kl_temp, dim=-1),
-                            reduction="batchmean",
-                        ) * (kl_temp ** 2)
+                            reduction="none",
+                        ).sum(dim=-1)  # (B, ans_len)
+                        kl_loss = (kl_per_pos * valid).sum() / valid.sum().clamp(min=1)
+                        kl_loss = kl_loss * (kl_temp ** 2)
                         combined_loss = (1.0 - distill_weight) * ce_loss + distill_weight * kl_loss
                     else:
                         combined_loss = ce_loss

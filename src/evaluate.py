@@ -17,6 +17,44 @@ from src.data import DenoisingDataset, build_pairs_from_config
 from src.models import FrozenEncoderAutoregressiveDecoder, FrozenEncoderDecoderConfig
 
 
+def compute_bertscore(
+    predictions: list[str],
+    references: list[str],
+    model_type: str = "roberta-large",
+    device: str = "cpu",
+) -> dict[str, float]:
+    """Compute corpus-level BERTScore P/R/F1 with baseline rescaling."""
+    if not predictions or not references:
+        return {}
+    from bert_score import score as bs_score
+    print(f"computing BERTScore ({len(predictions)} examples, model={model_type}, device={device})...")
+    try:
+        P, R, F1 = bs_score(
+            predictions,
+            references,
+            model_type=model_type,
+            lang="en",
+            device=device,
+            verbose=False,
+            rescale_with_baseline=True,
+        )
+    except Exception:
+        P, R, F1 = bs_score(
+            predictions,
+            references,
+            model_type=model_type,
+            lang="en",
+            device=device,
+            verbose=False,
+            rescale_with_baseline=False,
+        )
+    return {
+        "bertscore_precision": float(P.mean()),
+        "bertscore_recall": float(R.mean()),
+        "bertscore_f1": float(F1.mean()),
+    }
+
+
 def load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as handle:
         return yaml.safe_load(handle)

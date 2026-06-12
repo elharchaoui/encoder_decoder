@@ -20,6 +20,11 @@ data:
   source_max_length: 384
   target_max_length: 32
 
+training:
+  device: cuda
+  precision: bf16
+  batch_size: 8
+
 generation:
   checkpoint_dir: runs/t5_large_cross_attention_only_squad_30k_seed37/best
   output_file: reports/t5_large_cross_attention_only_squad_30k_seed37_eval.md

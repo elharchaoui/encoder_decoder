@@ -14,6 +14,7 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from src.data import build_pairs_from_config
 from src.evaluate import (
+    compute_bertscore,
     exact_match,
     source_copy_ratio,
     target_length_bucket,
@@ -105,8 +106,10 @@ def evaluate_generation(
     device: torch.device,
     limit: int,
     generation_overrides: dict | None = None,
-) -> tuple[dict[str, float], list[dict[str, str]]]:
+) -> tuple[dict[str, float], list[dict[str, str]], list[str], list[str]]:
     rows: list[dict[str, str]] = []
+    all_predictions: list[str] = []
+    all_references: list[str] = []
     prediction_counts: Counter[str] = Counter()
     prediction_lengths: list[int] = []
     total_em = 0.0
@@ -143,6 +146,8 @@ def evaluate_generation(
             min_new_tokens=int(generation_cfg.get("min_new_tokens", 0)),
         )
         prediction = " ".join(tokenizer.decode(generated[0], skip_special_tokens=True).strip().split())
+        all_predictions.append(prediction)
+        all_references.append(pair.target)
         prediction_counts[prediction] += 1
         prediction_lengths.append(len(prediction.split()))
         em = exact_match(prediction, pair.target)
@@ -197,7 +202,7 @@ def evaluate_generation(
     metrics["token_f1_gain_over_source_copy"] = (
         metrics["token_f1"] - metrics["source_copy_token_f1"]
     )
-    return metrics, rows
+    return metrics, rows, all_predictions, all_references
 
 
 def main() -> None:
@@ -217,6 +222,7 @@ def main() -> None:
     parser.add_argument("--length-penalty", type=float, default=None)
     parser.add_argument("--min-new-tokens", type=int, default=None)
     parser.add_argument("--report", default=None)
+    parser.add_argument("--bertscore", action="store_true", help="Compute BERTScore after generation (adds ~2min)")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -276,7 +282,7 @@ def main() -> None:
     }
     if args.do_sample and args.num_beams is None:
         generation_overrides["num_beams"] = 1
-    generation_metrics, samples = evaluate_generation(
+    generation_metrics, samples, all_predictions, all_references = evaluate_generation(
         model=model,
         pairs=pairs,
         tokenizer=tokenizer,
@@ -290,6 +296,8 @@ def main() -> None:
         "perplexity": math.exp(min(loss, 20)),
         **generation_metrics,
     }
+    if args.bertscore:
+        metrics.update(compute_bertscore(all_predictions, all_references))
     for key, value in generation_overrides.items():
         metrics[f"decode_{key}"] = float(value) if isinstance(value, (int, float, bool)) else value
     print(json.dumps(metrics, indent=2, sort_keys=True))
