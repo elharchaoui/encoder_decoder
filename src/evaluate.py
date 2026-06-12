@@ -91,6 +91,9 @@ def load_model(cfg: dict, checkpoint: str, tokenizer, device: torch.device):
             init_decoder_embeddings_from_encoder=bool(
                 model_cfg.get("init_decoder_embeddings_from_encoder", True)
             ),
+            init_decoder_layers_from_encoder=bool(
+                model_cfg.get("init_decoder_layers_from_encoder", False)
+            ),
             tie_token_embeddings=bool(model_cfg.get("tie_token_embeddings", True)),
             use_cross_attention=bool(model_cfg.get("use_cross_attention", True)),
         )
@@ -234,6 +237,7 @@ def write_report(
         f"- Decoder heads: `{cfg['model']['decoder_heads']}`",
         f"- Encoder frozen: `true`",
         f"- Decoder embedding init from encoder: `{cfg['model'].get('init_decoder_embeddings_from_encoder', True)}`",
+        f"- Decoder layer init from encoder: `{cfg['model'].get('init_decoder_layers_from_encoder', False)}`",
         f"- Token embeddings tied: `{cfg['model'].get('tie_token_embeddings', True)}`",
         f"- Cross-attention enabled: `{cfg['model'].get('use_cross_attention', True)}`",
         "",

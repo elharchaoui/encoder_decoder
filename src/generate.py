@@ -49,6 +49,9 @@ def main() -> None:
             init_decoder_embeddings_from_encoder=bool(
                 cfg["model"].get("init_decoder_embeddings_from_encoder", True)
             ),
+            init_decoder_layers_from_encoder=bool(
+                cfg["model"].get("init_decoder_layers_from_encoder", False)
+            ),
             tie_token_embeddings=bool(cfg["model"].get("tie_token_embeddings", True)),
             use_cross_attention=bool(cfg["model"].get("use_cross_attention", True)),
         )

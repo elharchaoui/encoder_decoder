@@ -200,6 +200,90 @@ def build_wikitext_pairs(
     return pairs[:count]
 
 
+def build_qa_pairs(
+    count: int,
+    seed: int,
+    split: str,
+    dataset_name: str = "rajpurkar/squad",
+    dataset_config: str | None = None,
+    question_prefix: str = "question:",
+    context_prefix: str = "context:",
+) -> list[TextPair]:
+    from datasets import load_dataset
+
+    rng = random.Random(seed)
+    if dataset_config:
+        dataset = load_dataset(dataset_name, dataset_config, split=split)
+    else:
+        dataset = load_dataset(dataset_name, split=split)
+    rows = list(dataset)
+    rng.shuffle(rows)
+    pairs: list[TextPair] = []
+    for row in rows:
+        question = normalize_text(str(row.get("question", "")))
+        context = normalize_text(str(row.get("context", "")))
+        answers = row.get("answers", {})
+        answer_texts = answers.get("text", []) if isinstance(answers, dict) else []
+        if not question or not context or not answer_texts:
+            continue
+        target = normalize_text(str(answer_texts[0]))
+        if not target:
+            continue
+        source = f"{question_prefix} {question} {context_prefix} {context}"
+        pairs.append(TextPair(source=source, target=target))
+        if len(pairs) >= count:
+            break
+    if len(pairs) < count:
+        raise RuntimeError(
+            f"Requested {count} QA examples from {dataset_name}:{split}, but built {len(pairs)}."
+        )
+    return pairs
+
+
+def build_hotpotqa_pairs(
+    count: int,
+    seed: int,
+    split: str,
+    dataset_name: str = "hotpotqa/hotpot_qa",
+    dataset_config: str = "distractor",
+    question_prefix: str = "question:",
+    context_prefix: str = "context:",
+    max_context_words: int = 256,
+) -> list[TextPair]:
+    from datasets import load_dataset
+
+    rng = random.Random(seed)
+    dataset = load_dataset(dataset_name, dataset_config, split=split)
+    rows = list(dataset)
+    rng.shuffle(rows)
+    pairs: list[TextPair] = []
+    for row in rows:
+        question = normalize_text(str(row.get("question", "")))
+        answer = normalize_text(str(row.get("answer", "")))
+        if not question or not answer or answer.lower() in ("yes", "no", ""):
+            continue
+        # Concatenate all supporting paragraphs as the context
+        context_parts: list[str] = []
+        for title, sentences in zip(
+            row["context"]["title"], row["context"]["sentences"]
+        ):
+            paragraph = " ".join(normalize_text(s) for s in sentences)
+            context_parts.append(f"{normalize_text(title)}: {paragraph}")
+        context = " ".join(context_parts)
+        context_words = context.split()
+        if len(context_words) > max_context_words:
+            context = " ".join(context_words[:max_context_words])
+        source = f"{question_prefix} {question} {context_prefix} {context}"
+        pairs.append(TextPair(source=source, target=answer))
+        if len(pairs) >= count:
+            break
+    if len(pairs) < count:
+        raise RuntimeError(
+            f"Requested {count} HotpotQA examples from {split}, but built {len(pairs)}."
+        )
+    return pairs[:count]
+
+
 def build_pairs_from_config(cfg: dict, seed: int, mask_token: str, split: str) -> list[TextPair]:
     data_cfg = cfg["data"]
     source = data_cfg.get("source", "synthetic")
@@ -230,6 +314,29 @@ def build_pairs_from_config(cfg: dict, seed: int, mask_token: str, split: str) -
             span_target_config=span_target_config,
             min_words=int(data_cfg.get("min_words", 8)),
             max_words=int(data_cfg.get("max_words", 48)),
+        )
+    if source == "qa":
+        hf_split = data_cfg.get("train_split" if split == "train" else "validation_split", split)
+        return build_qa_pairs(
+            count=count,
+            seed=seed if split == "train" else seed + 1,
+            split=hf_split,
+            dataset_name=data_cfg.get("dataset_name", "rajpurkar/squad"),
+            dataset_config=data_cfg.get("dataset_config"),
+            question_prefix=data_cfg.get("question_prefix", "question:"),
+            context_prefix=data_cfg.get("context_prefix", "context:"),
+        )
+    if source == "hotpotqa":
+        hf_split = data_cfg.get("train_split" if split == "train" else "validation_split", split)
+        return build_hotpotqa_pairs(
+            count=count,
+            seed=seed if split == "train" else seed + 1,
+            split=hf_split,
+            dataset_name=data_cfg.get("dataset_name", "hotpot_qa"),
+            dataset_config=data_cfg.get("dataset_config", "distractor"),
+            question_prefix=data_cfg.get("question_prefix", "question:"),
+            context_prefix=data_cfg.get("context_prefix", "context:"),
+            max_context_words=int(data_cfg.get("max_context_words", 256)),
         )
     raise ValueError(f"Unsupported data.source: {source}")
 

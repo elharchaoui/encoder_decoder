@@ -1,0 +1,33 @@
+seed: 37
+
+training:
+  device: cuda
+  precision: bf16
+
+model:
+  decoder_name: gpt2-large
+  prompt_prefix: "answer question: "
+  answer_prefix: "\nanswer: "
+
+data:
+  source: hotpotqa
+  dataset_name: hotpotqa/hotpot_qa
+  dataset_config: distractor
+  train_split: train
+  validation_split: validation
+  train_examples: 30000
+  validation_examples: 512
+  question_prefix: "question:"
+  context_prefix: "context:"
+  max_context_words: 256
+  source_max_length: 384
+  target_max_length: 32
+
+generation:
+  checkpoint_dir: runs/gpt2_large_hotpotqa_30k_seed37/best
+  output_file: reports/gpt2_large_hotpotqa_30k_seed37_eval.md
+  max_new_tokens: 32
+  min_new_tokens: 1
+  num_samples: 8
+  num_beams: 4
+  batch_size: 8

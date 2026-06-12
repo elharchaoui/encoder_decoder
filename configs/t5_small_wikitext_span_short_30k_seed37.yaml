@@ -1,0 +1,53 @@
+seed: 37
+
+model:
+  seq2seq_name: google-t5/t5-small
+  input_prefix: "recover missing span: "
+
+data:
+  source: wikitext
+  objective: span_target
+  dataset_name: Salesforce/wikitext
+  dataset_config: wikitext-2-raw-v1
+  train_split: train
+  validation_split: validation
+  train_examples: 30000
+  validation_examples: 256
+  source_max_length: 64
+  target_max_length: 16
+  min_words: 8
+  max_words: 40
+  span_target:
+    sentinel_token: "<extra_id_0>"
+    min_span_length: 1
+    max_span_length: 3
+    min_left_words: 2
+    min_right_words: 2
+
+training:
+  output_dir: runs/t5_small_wikitext_span_short_30k_seed37
+  device: cuda
+  precision: bf16
+  batch_size: 8
+  gradient_accumulation_steps: 4
+  max_steps: 9000
+  learning_rate: 0.0001
+  warmup_steps: 900
+  weight_decay: 0.01
+  gradient_clip_norm: 1.0
+  log_every: 300
+  eval_every: 2250
+  save_every: 4500
+
+generation:
+  max_new_tokens: 10
+  min_new_tokens: 1
+  num_samples: 8
+  do_sample: false
+  temperature: 1.0
+  top_k: 0
+  top_p: 1.0
+  repetition_penalty: 1.0
+  no_repeat_ngram_size: 0
+  num_beams: 2
+  length_penalty: 0.8

@@ -1,0 +1,37 @@
+seed: 37
+
+model:
+  seq2seq_name: google-t5/t5-small
+  input_prefix: "answer question: "
+  train_only_patterns:
+    - ".EncDecAttention."
+    - "decoder.final_layer_norm"
+
+data:
+  source: qa
+  objective: extractive_qa
+  dataset_name: rajpurkar/squad
+  train_split: train
+  validation_split: validation
+  train_examples: 3000
+  validation_examples: 512
+  question_prefix: "question:"
+  context_prefix: "context:"
+  source_max_length: 128
+  target_max_length: 32
+
+training:
+  device: cuda
+  precision: bf16
+  batch_size: 8
+
+generation:
+  checkpoint_dir: runs/t5_small_cross_attention_only_squad_3k_seed37/best
+  output_file: reports/t5_small_xa_squad_ctx128_eval.md
+  max_new_tokens: 16
+  min_new_tokens: 1
+  num_samples: 8
+  do_sample: false
+  num_beams: 4
+  length_penalty: 1.0
+  batch_size: 8

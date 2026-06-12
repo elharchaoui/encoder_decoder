@@ -1,0 +1,53 @@
+seed: 37
+
+model:
+  encoder_name: thenlper/gte-small
+  decoder_name: Qwen/Qwen2-0.5B-Instruct
+  teacher_name: Qwen/Qwen2-0.5B-Instruct
+  memory_tokens: 64
+  bridge_heads: 8
+  bridge_dropout: 0.0
+  freeze_encoder: true
+  freeze_decoder: true
+  decoder_trainable_patterns:
+    - "model.layers.23.self_attn."
+    - "model.layers.23.input_layernorm"
+    - "model.layers.23.post_attention_layernorm"
+    - "model.norm."
+  source_prefix: ""
+  decoder_prefix: "Answer: "
+
+data:
+  source: qa
+  objective: extractive_qa
+  dataset_name: rajpurkar/squad
+  train_split: train
+  validation_split: validation
+  train_examples: 800
+  validation_examples: 128
+  question_prefix: "question:"
+  context_prefix: "context:"
+  source_max_length: 384
+  target_max_length: 32
+
+training:
+  output_dir: runs/prefix_memory_qwen05_distill_squad_debug
+  device: cuda
+  precision: bf16
+  batch_size: 2
+  gradient_accumulation_steps: 8
+  max_steps: 800
+  learning_rate: 0.0001
+  warmup_steps: 80
+  weight_decay: 0.01
+  gradient_clip_norm: 1.0
+  log_every: 50
+  eval_every: 200
+  save_every: 400
+  distill_weight: 0.5
+  distill_temperature: 2.0
+
+generation:
+  max_new_tokens: 32
+  min_new_tokens: 1
+  num_samples: 8

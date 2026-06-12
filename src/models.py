@@ -19,6 +19,7 @@ class FrozenEncoderDecoderConfig:
     decoder_ffn_dim: int = 3072
     dropout: float = 0.1
     init_decoder_embeddings_from_encoder: bool = True
+    init_decoder_layers_from_encoder: bool = False
     tie_token_embeddings: bool = True
     use_cross_attention: bool = True
 
@@ -53,6 +54,8 @@ class FrozenEncoderAutoregressiveDecoder(nn.Module):
         self.lm_head = nn.Linear(self.hidden_size, config.vocab_size, bias=False)
         if config.init_decoder_embeddings_from_encoder:
             self._init_decoder_embeddings_from_encoder()
+        if config.init_decoder_layers_from_encoder:
+            self._init_decoder_layers_from_encoder()
         if config.tie_token_embeddings:
             self.lm_head.weight = self.token_embedding.weight
         self.encoder_call_count = 0
@@ -77,6 +80,64 @@ class FrozenEncoderAutoregressiveDecoder(nn.Module):
             return
         with torch.no_grad():
             self.token_embedding.weight.copy_(source_weight)
+
+    def _copy_if_same_shape(self, target: torch.Tensor, source: torch.Tensor) -> bool:
+        if target.shape != source.shape:
+            return False
+        with torch.no_grad():
+            target.copy_(source.detach())
+        return True
+
+    def _init_decoder_layers_from_encoder(self) -> None:
+        encoder_layers = getattr(getattr(self.encoder, "encoder", None), "layer", None)
+        if encoder_layers is None:
+            return
+        for decoder_layer_index, decoder_layer in enumerate(self.decoder.layers):
+            encoder_layer = encoder_layers[decoder_layer_index % len(encoder_layers)]
+            attention = encoder_layer.attention
+            intermediate = encoder_layer.intermediate
+            output = encoder_layer.output
+
+            self._copy_if_same_shape(
+                decoder_layer.self_attn.in_proj_weight[: self.hidden_size],
+                attention.self.query.weight,
+            )
+            self._copy_if_same_shape(
+                decoder_layer.self_attn.in_proj_weight[self.hidden_size : 2 * self.hidden_size],
+                attention.self.key.weight,
+            )
+            self._copy_if_same_shape(
+                decoder_layer.self_attn.in_proj_weight[2 * self.hidden_size :],
+                attention.self.value.weight,
+            )
+            self._copy_if_same_shape(
+                decoder_layer.self_attn.in_proj_bias[: self.hidden_size],
+                attention.self.query.bias,
+            )
+            self._copy_if_same_shape(
+                decoder_layer.self_attn.in_proj_bias[self.hidden_size : 2 * self.hidden_size],
+                attention.self.key.bias,
+            )
+            self._copy_if_same_shape(
+                decoder_layer.self_attn.in_proj_bias[2 * self.hidden_size :],
+                attention.self.value.bias,
+            )
+            self._copy_if_same_shape(
+                decoder_layer.self_attn.out_proj.weight,
+                attention.output.dense.weight,
+            )
+            self._copy_if_same_shape(
+                decoder_layer.self_attn.out_proj.bias,
+                attention.output.dense.bias,
+            )
+            self._copy_if_same_shape(decoder_layer.linear1.weight, intermediate.dense.weight)
+            self._copy_if_same_shape(decoder_layer.linear1.bias, intermediate.dense.bias)
+            self._copy_if_same_shape(decoder_layer.linear2.weight, output.dense.weight)
+            self._copy_if_same_shape(decoder_layer.linear2.bias, output.dense.bias)
+            self._copy_if_same_shape(decoder_layer.norm1.weight, attention.output.LayerNorm.weight)
+            self._copy_if_same_shape(decoder_layer.norm1.bias, attention.output.LayerNorm.bias)
+            self._copy_if_same_shape(decoder_layer.norm3.weight, output.LayerNorm.weight)
+            self._copy_if_same_shape(decoder_layer.norm3.bias, output.LayerNorm.bias)
 
     def encode(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         self.encoder_call_count += 1

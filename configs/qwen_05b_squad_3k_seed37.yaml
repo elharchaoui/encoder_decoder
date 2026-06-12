@@ -1,0 +1,40 @@
+seed: 37
+
+model:
+  decoder_name: Qwen/Qwen2-0.5B-Instruct
+  prompt_prefix: "answer question: "
+  answer_prefix: "\nanswer: "
+
+data:
+  source: qa
+  objective: extractive_qa
+  dataset_name: rajpurkar/squad
+  train_split: train
+  validation_split: validation
+  train_examples: 3000
+  validation_examples: 256
+  question_prefix: "question:"
+  context_prefix: "context:"
+  source_max_length: 384
+  target_max_length: 32
+
+training:
+  output_dir: runs/qwen_05b_squad_3k_seed37
+  device: cuda
+  precision: bf16
+  batch_size: 2
+  gradient_accumulation_steps: 16
+  max_steps: 1500
+  learning_rate: 0.00005
+  warmup_steps: 150
+  weight_decay: 0.01
+  gradient_clip_norm: 1.0
+  log_every: 100
+  eval_every: 375
+  save_every: 750
+
+generation:
+  max_new_tokens: 32
+  min_new_tokens: 1
+  num_samples: 8
+  num_beams: 1

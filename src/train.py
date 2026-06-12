@@ -123,6 +123,9 @@ def main() -> None:
             init_decoder_embeddings_from_encoder=bool(
                 cfg["model"].get("init_decoder_embeddings_from_encoder", True)
             ),
+            init_decoder_layers_from_encoder=bool(
+                cfg["model"].get("init_decoder_layers_from_encoder", False)
+            ),
             tie_token_embeddings=bool(cfg["model"].get("tie_token_embeddings", True)),
             use_cross_attention=bool(cfg["model"].get("use_cross_attention", True)),
         )
@@ -132,6 +135,7 @@ def main() -> None:
     total_params = sum(p.numel() for p in model.parameters())
     print(f"device={device}")
     print(f"use_cross_attention={model.config.use_cross_attention}")
+    print(f"init_decoder_layers_from_encoder={model.config.init_decoder_layers_from_encoder}")
     print(f"trainable_params={trainable_params:,}")
     print(f"total_params={total_params:,}")
 

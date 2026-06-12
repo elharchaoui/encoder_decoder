@@ -1,0 +1,30 @@
+seed: 37
+
+model:
+  decoder_name: gpt2
+  prompt_prefix: "answer question: "
+  answer_prefix: "\nanswer: "
+
+data:
+  source: qa
+  objective: extractive_qa
+  dataset_name: rajpurkar/squad
+  train_split: train
+  validation_split: validation
+  train_examples: 3000
+  validation_examples: 512
+  question_prefix: "question:"
+  context_prefix: "context:"
+  source_max_length: 512
+  target_max_length: 32
+
+training:
+  device: cuda
+  precision: bf16
+
+generation:
+  max_new_tokens: 32
+  min_new_tokens: 1
+  num_samples: 8
+  num_beams: 4
+  batch_size: 8
