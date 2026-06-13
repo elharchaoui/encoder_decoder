@@ -1,236 +1,94 @@
-# External Review Response
+# Review Response
 
-Date: 2026-06-10
+## Scope Decision
 
-## Bottom Line
+The active paper scope is now:
 
-The review is correct.
+> Encoder-decoder versus decoder-only architectures for context-grounded
+> generation with medium to large input contexts.
 
-The original hypothesis survives only in a narrower form:
+This scope keeps Qwen2-0.5B as a decoder-only baseline, because it is a modern
+decoder-only model and strengthens the architectural comparison beyond GPT-2.
 
-> Pretrained generative stacks can be adapted efficiently by training only the conditioning bridge or cross-attention.
+## Accepted Cleanup
 
-The stronger original version is not supported:
+The following experiment branches are excluded from the active evidence base:
 
-> A frozen encoder plus a newly initialized small decoder can generate well.
+- custom frozen-BERT encoder plus randomly initialized decoder,
+- WikiText reconstruction and span-recovery tasks,
+- T5 WikiText span baselines,
+- Qwen prefix-memory compressed-context experiments.
 
-That path should stay paused unless the decoder is pretrained.
+Reason:
 
-## What The Evidence Supports
+- They do not directly test the retained architecture question.
+- They add extra hypotheses about frozen encoders, synthetic span recovery, or
+  soft-memory compression.
+- Mixing them into the main narrative makes the result look less focused.
 
-### Strong Negative: Custom BERT Plus Weak Decoder
+## Qwen Clarification
 
-The custom frozen-BERT architecture has now failed in several ways:
+Retained Qwen:
 
-- Random decoder generation is weak.
-- BERT-layer warm-start improves teacher-forced loss slightly but not generation.
-- Decoder-only and no-cross-attention controls are close to the cross-attention model.
-- Reranking shows frozen-BERT cross-attention does not identify the correct missing span better than decoder-only.
+- `qwen_05b_squad_3k_seed37`
+- `qwen_05b_hotpotqa_3k_seed37`
 
-This is not just a decoding bug. The decoder is not using the encoder memory strongly enough.
+These runs are direct decoder-only baselines.
 
-### Strong Positive: T5 Cross-Attention-Only
+Removed Qwen:
 
-The best current result is T5-small with only encoder-decoder attention and decoder final norm trainable:
+- `prefix_memory_qwen05_*`
 
-| Model | Trainable params | Token F1 | Exact match |
-| --- | ---: | ---: | ---: |
-| T5-small full fine-tune | `60.5M` | `0.2482` | `0.0938` |
-| T5-small frozen encoder | `25.2M` | `0.2133` | `0.0625` |
-| T5-small cross-attention-only | `6.3M` | `0.2553` | `0.0938` |
+Those runs use a hybrid encoder/bridge/decoder design. They are not appropriate
+as clean decoder-only baselines.
 
-This is the cleanest evidence for efficient conditioning adaptation.
+## Strongest Current Evidence
 
-### Interesting But Not Yet Convincing: Qwen Prefix Memory
+### SQuAD
 
-Prefix-memory Qwen is feasible:
+| Model | Architecture | Token F1 | Exact Match |
+| --- | --- | ---: | ---: |
+| T5-small cross-attention-only | encoder-decoder | 0.7075 | 0.5293 |
+| T5-small full fine-tune | encoder-decoder | 0.7307 | 0.5566 |
+| GPT-2-small full fine-tune | decoder-only | 0.2669 | 0.1504 |
+| Qwen2-0.5B full fine-tune | decoder-only | 0.5788 | 0.4004 |
+| T5-large cross-attention-only | encoder-decoder | 0.8128 | 0.6406 |
+| GPT-2-large full fine-tune | decoder-only | 0.5041 | 0.3516 |
 
-- Qwen2-0.5B runs locally.
-- Checkpoints are compact.
-- Bridge-only adaptation trains.
-- Final-layer adapter improves the artificial span benchmark.
+### HotpotQA
 
-But SQuAD exposes the core failure:
+| Model | Architecture | Token F1 | Exact Match |
+| --- | --- | ---: | ---: |
+| T5-small cross-attention-only | encoder-decoder | 0.2086 | 0.1074 |
+| T5-small full fine-tune | encoder-decoder | 0.2404 | 0.1348 |
+| GPT-2-small full fine-tune | decoder-only | 0.0304 | 0.0039 |
+| Qwen2-0.5B full fine-tune | decoder-only | 0.1415 | 0.0664 |
+| T5-large cross-attention-only | encoder-decoder | 0.3064 | 0.1895 |
+| GPT-2-large full fine-tune | decoder-only | 0.0850 | 0.0469 |
 
-| Evaluation | Prefix-memory Qwen | Full-context Qwen baseline |
-| --- | ---: | ---: |
-| SQuAD generation token F1 | `0.0210` | `0.1390` |
-| SQuAD rerank accuracy | `0.1406` | `0.6719` |
+## Remaining Review Concerns
 
-The compressed memory path is not preserving answer identity.
+The final paper should still avoid overclaiming.
 
-## Review Points Accepted
+Recommended framing:
 
-1. `64` generation examples is debug-only. Any winner needs at least `512` generated validation examples.
-2. Token F1 is not enough because it can reward shallow high-frequency-token behavior.
-3. Prefix-memory should be evaluated as retention under compression, not as a direct model-quality replacement.
-4. Random WikiText spans are useful diagnostics but not sufficient semantic reasoning tests.
+- Claim encoder-decoder superiority for context-grounded QA and similar tasks,
+  not for all generation.
+- Present GPT-2 and Qwen as decoder-only baselines from different model families.
+- State that Qwen narrows the gap compared with GPT-2 but does not remove it.
+- Separate quality, parameter efficiency, and latency claims.
+- Add confidence intervals or repeated-seed evaluations before submission if
+  these numbers become headline claims.
 
-## Revised Success Criteria
+## Current Recommendation
 
-### T5 Cross-Attention-Only
+Keep the repository focused on:
 
-A serious result requires:
+1. T5 encoder-decoder QA.
+2. GPT-2 decoder-only QA.
+3. Qwen2 decoder-only QA.
+4. BERTScore semantic validation.
+5. Context-length and latency scaling.
 
-- at least `3` seeds,
-- at least `512` generated validation examples,
-- larger training sizes: `3k`, `10k`, `30k`,
-- comparison against full fine-tune T5 and frozen-encoder T5.
-
-### Qwen Prefix Memory
-
-A credible compressed-memory result requires:
-
-- at least `60-80%` of full-context Qwen reranking accuracy,
-- much shorter decoder context than full-context Qwen,
-- no prediction-collapse behavior,
-- candidate reranking above random by a meaningful margin before free generation is trusted.
-
-## Revised Next Steps
-
-1. Promote T5 cross-attention-only to the main efficient baseline.
-2. Run T5 cross-attention-only across `3` seeds with `512+` generation examples.
-3. Scale T5 cross-attention-only to `10k` and `30k` training examples if seed variance is acceptable.
-4. Pause custom BERT random-decoder work.
-5. Continue Qwen prefix-memory only with distillation or contrastive answer-selection training.
-6. Track collapse metrics as first-class metrics:
-   - unique predictions,
-   - top prediction ratio,
-   - answer/source copy ratio,
-   - length distribution,
-   - entropy where practical,
-   - candidate-rerank accuracy where candidates exist.
-
-## First Follow-Up Completed
-
-The seq2seq evaluator now tracks collapse diagnostics, and the existing T5 cross-attention-only checkpoint was re-evaluated on `512` validation generations.
-
-| Metric | Value |
-| --- | ---: |
-| Token F1 | `0.2236` |
-| Exact match | `0.0859` |
-| Source-copy token F1 | `0.0294` |
-| Unique predictions | `309 / 512` |
-| Top prediction ratio | `0.0781` |
-| Empty prediction ratio | `0.0020` |
-
-Interpretation:
-
-- The earlier `64`-example result was optimistic but directionally valid.
-- T5 cross-attention-only remains the main efficient baseline.
-- The next evidence needed is seed stability, not a new architecture.
-
-## Seed Stability Completed
-
-The `3k` T5 cross-attention-only setup was run across three seeds and evaluated on `512` validation generations.
-
-| Seed | Token F1 | Exact match | Unique predictions | Top prediction ratio |
-| ---: | ---: | ---: | ---: | ---: |
-| `29` | `0.2236` | `0.0859` | `309 / 512` | `0.0781` |
-| `31` | `0.2354` | `0.1074` | `299 / 512` | `0.0703` |
-| `37` | `0.2380` | `0.1094` | `329 / 512` | `0.0820` |
-
-Mean token F1 is `0.2323` with sample standard deviation `0.0077`.
-
-Decision:
-
-- Seed stability is good enough to scale this path.
-- Next experiment should be T5 cross-attention-only at `10k` training examples.
-- Qwen prefix-memory should remain paused until its training objective changes.
-
-## 10k Scale-Up Completed
-
-The first `10k` T5 cross-attention-only run improved substantially over the matching `3k` seed.
-
-| Run | Token F1 | Exact match | Prediction-source copy ratio | Unique predictions | Top prediction ratio |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 3k seed 37 | `0.2380` | `0.1094` | `0.4553` | `329 / 512` | `0.0820` |
-| 10k seed 37 | `0.3052` | `0.1484` | `0.3762` | `361 / 512` | `0.0664` |
-
-Decision:
-
-- The scale-up result supports promoting T5 cross-attention-only as the main efficient baseline.
-- The next check should be a second `10k` seed before spending GPU time on `30k`.
-
-## Second 10k Seed Completed
-
-The second `10k` seed confirms that the scale-up gain is real enough to proceed.
-
-| Run | Token F1 | Exact match | Unique predictions | Top prediction ratio |
-| --- | ---: | ---: | ---: | ---: |
-| 10k seed 37 | `0.3052` | `0.1484` | `361 / 512` | `0.0664` |
-| 10k seed 31 | `0.2822` | `0.1426` | `324 / 512` | `0.0781` |
-
-Mean token F1 is `0.2937`, compared with the `3k` mean of `0.2323`.
-
-Decision:
-
-- Proceed to one `30k` T5 cross-attention-only run.
-- Keep Qwen prefix-memory paused until contrastive/distillation training is implemented.
-
-## 30k Run Completed
-
-The first `30k` T5 cross-attention-only run improves loss but only matches the `10k` generation band.
-
-| Run | Token F1 | Exact match | Eval loss | Unique predictions | Top prediction ratio |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 10k seed 37 | `0.3052` | `0.1484` | `2.8488` | `361 / 512` | `0.0664` |
-| 10k seed 31 | `0.2822` | `0.1426` | `2.7976` | `324 / 512` | `0.0781` |
-| 30k seed 37 | `0.2985` | `0.1523` | `2.7115` | `379 / 512` | `0.0508` |
-
-Decision:
-
-- Do not claim a clean `30k > 10k` generation improvement yet.
-- Next evidence should be matched 512-example evaluation for full T5/frozen-encoder T5 and a small decode sweep for the 30k checkpoint.
-
-## Matched Baselines and Decode Sweep Completed
-
-Full-T5 and frozen-encoder T5 were re-evaluated on the same 512-example protocol.
-
-| Model | Token F1 | Exact match | Eval loss |
-| --- | ---: | ---: | ---: |
-| Full T5, 3k | `0.2107` | `0.0723` | `2.9849` |
-| Frozen-encoder T5, 3k | `0.1977` | `0.0645` | `3.1352` |
-| Cross-attention-only T5, 30k, beam 4 | `0.2985` | `0.1523` | `2.7115` |
-| Cross-attention-only T5, 30k, beam 2 lp 0.8 | `0.3107` | `0.1563` | `2.7115` |
-
-Decision:
-
-- The current best efficient baseline is 30k cross-attention-only with beam 2.
-- Best token-F1 decode: `num_beams=2`, `length_penalty=0.8`.
-- Best exact-match decode: `num_beams=2`, `length_penalty=1.2`.
-- Next high-value experiment is either a matched 30k full-T5 upper bound or moving the cross-attention-only recipe to QA.
-
-## Matched 30k Full-T5 Upper Bound Completed
-
-The matched full-T5 upper bound was trained at `30k` examples with seed `37` and the same `9000`-step schedule as the 30k cross-attention-only run.
-
-| Model | Trainable params | Decode | Token F1 | Exact match | Eval loss | Unique predictions | Top prediction ratio |
-| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| Cross-attention-only T5, 30k | `6.3M` | Beam 2, lp `0.8` | `0.3107` | `0.1563` | `2.7115` | `354 / 512` | `0.0586` |
-| Cross-attention-only T5, 30k | `6.3M` | Beam 2, lp `1.2` | `0.3077` | `0.1602` | `2.7115` | `372 / 512` | `0.0547` |
-| Full T5, 30k | `60.5M` | Beam 2, lp `0.8` | `0.3132` | `0.1582` | `2.5198` | `373 / 512` | `0.0586` |
-| Full T5, 30k | `60.5M` | Beam 2, lp `1.2` | `0.3150` | `0.1641` | `2.5198` | `389 / 512` | `0.0547` |
-
-Decision:
-
-- Full T5 is the matched quality upper bound, but only narrowly.
-- Cross-attention-only retains most of the full-T5 generation quality while training about one tenth of the parameters.
-- The external-review recommendation was directionally correct: the custom BERT random-decoder path should remain paused, and pretrained generative adaptation should stay central.
-- The next high-value experiment is no longer another WikiText scale-up; it should be a semantic QA comparison or a Qwen prefix-memory objective change with contrastive/distillation training.
-
-## SQuAD Semantic QA Comparison Completed
-
-The cross-attention-only T5 recipe was tested on SQuAD extractive QA to address the concern that random WikiText spans overemphasize memorized wording.
-
-| Model | Trainable params | Token F1 | Exact match | Eval loss | Unique predictions | Top prediction ratio |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Cross-attention-only T5, SQuAD 3k | `6.3M` | `0.7075` | `0.5293` | `0.4208` | `507 / 512` | `0.0039` |
-| Full T5, SQuAD 3k | `60.5M` | `0.7307` | `0.5566` | `0.4218` | `505 / 512` | `0.0039` |
-
-Decision:
-
-- The efficient pretrained-generative direction now has semantic-QA support, not only WikiText span-recovery support.
-- Full T5 remains the quality upper bound, but cross-attention-only retains about `96.8%` of full-T5 token F1 with about one tenth of the trainable parameters.
-- Collapse diagnostics are clean on both runs.
-- The next best experiment is a SQuAD `10k` scale-up or decode sweep for exact-match optimization, not returning to custom BERT random decoders.
+Everything else should stay removed or archived outside the active experiment
+tree.

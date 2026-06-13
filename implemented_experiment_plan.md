@@ -1,364 +1,129 @@
-# Experiment Plan: Frozen Encoder Memory + Autoregressive Decoder
+# Encoder-Decoder vs Decoder-Only Context Experiments
 
-## 1. Hypothesis
+## Objective
 
-A pretrained encoder-only model can be run once on an input sequence and used as a fixed semantic memory for a lightweight autoregressive decoder that generates one token at a time without re-running the encoder.
+This repository evaluates whether encoder-decoder architectures are a better fit
+than decoder-only architectures for context-grounded generation when the input
+contains medium to large context.
 
-The useful test is not whether encoder-decoder generation is possible. That has already been shown by BERT2BERT, BERT encoder plus Transformer decoder, BERT/GPT-2 warm-started encoder-decoder systems, and Hugging Face `EncoderDecoderModel`. The useful test is whether a modern or frozen encoder-only representation can support a small autoregressive decoder with acceptable quality, training cost, and inference efficiency.
+The comparison is architectural:
 
-## 2. Research Question
+- Encoder-decoder: T5-small and T5-large.
+- Decoder-only: GPT-2-small, GPT-2-large, and Qwen2-0.5B.
 
-Can a frozen encoder-only model provide enough reusable information for a compact autoregressive decoder to generate fluent and task-correct text, while reducing trainable parameters and avoiding repeated encoder computation?
+The target tasks are extractive and multi-hop question answering, where the model
+must answer from a supplied context passage rather than rely on open-ended
+parametric generation.
 
-## 3. Prior Work Anchors
+## Current Hypothesis
 
-- Hugging Face supports encoder-decoder initialization through `EncoderDecoderModel.from_encoder_decoder_pretrained`, including BERT2BERT-style setups: https://huggingface.co/docs/transformers/en/model_doc/encoder-decoder
-- Rothe, Narayan, and Severyn tested sequence generation models initialized from BERT, GPT-2, and RoBERTa checkpoints: https://aclanthology.org/2020.tacl-1.18/
-- Liu and Lapata used pretrained BERT encoders for extractive and abstractive summarization, including an abstractive encoder-decoder setup: https://arxiv.org/abs/1908.08345
+For context-grounded generation, encoder-decoder models should have an advantage
+because the encoder builds bidirectional representations of the full context
+before answer generation. Decoder-only models process the same context as a
+causal prefix, which is less aligned with reading and selecting evidence from a
+document.
 
-## 4. Main Claim To Test
+The expected advantage should appear in answer quality, quality per trainable
+parameter, robustness as context length increases, and latency scaling as the
+input context gets longer.
 
-The encoder does not need to be part of the generation loop. It should run once:
+## Retained Experiment Families
 
-```text
-encoder_memory = Encoder(source_tokens)
-```
+### Small-Scale Semantic QA
 
-Then the decoder should generate autoregressively, one next token at a time:
+Reports: `reports/05_semantic_qa_small_paradigm/`
 
-```text
-generated = [BOS]
+| Model | Architecture | Task | Token F1 | Exact Match |
+| --- | --- | --- | ---: | ---: |
+| T5-small cross-attention-only | encoder-decoder | SQuAD | 0.7075 | 0.5293 |
+| T5-small full fine-tune | encoder-decoder | SQuAD | 0.7307 | 0.5566 |
+| GPT-2-small full fine-tune | decoder-only | SQuAD | 0.2669 | 0.1504 |
+| Qwen2-0.5B full fine-tune | decoder-only | SQuAD | 0.5788 | 0.4004 |
+| T5-small cross-attention-only | encoder-decoder | HotpotQA | 0.2086 | 0.1074 |
+| GPT-2-small full fine-tune | decoder-only | HotpotQA | 0.0304 | 0.0039 |
+| Qwen2-0.5B full fine-tune | decoder-only | HotpotQA | 0.1415 | 0.0664 |
 
-while not done:
-    next_token = Decoder(generated, encoder_memory)
-    generated.append(next_token)
-```
+### Large-Scale And Semantic Metrics
 
-The decoder may repeatedly cross-attend to the fixed encoder memory, but the source encoder must not be called again during generation.
+Reports: `reports/06_large_scale_and_bertscore/`
 
-This is not a diffusion-style decoder. The decoder does not iteratively refine a full output sequence. It is trained and used as a standard causal next-token model conditioned on fixed encoder memory.
+| Model | Architecture | Task | Token F1 | BERTScore F1 |
+| --- | --- | --- | ---: | ---: |
+| T5-large cross-attention-only | encoder-decoder | SQuAD | 0.8075-0.8128 | 0.7952 |
+| T5-large LoRA r=8 | encoder-decoder | SQuAD | 0.8152 | not run |
+| T5-large full fine-tune | encoder-decoder | SQuAD | 0.8162 | not run |
+| GPT-2-large full fine-tune | decoder-only | SQuAD | 0.5041 | 0.5250 |
+| T5-large cross-attention-only | encoder-decoder | HotpotQA | 0.3064 | 0.3439 |
+| GPT-2-large full fine-tune | decoder-only | HotpotQA | 0.0850 | 0.0484 |
 
-## 5. Minimum Viable Experiment
+### Context-Length And Latency Scaling
 
-Use a denoising text reconstruction task because it is simple, cheap, and naturally aligned with an encoder-only model.
+Reports: `reports/07_long_context_efficiency/`
 
-Input examples:
+| Context Tokens | T5-small XA F1 | GPT-2-small F1 |
+| ---: | ---: | ---: |
+| 128 | 0.5361 | 0.0872 |
+| 192 | 0.6660 | 0.1995 |
+| 256 | 0.7015 | 0.2373 |
+| 320 | 0.7081 | 0.2633 |
+| 384 | 0.7075 | 0.2669 |
+| 512 | 0.7225 | 0.2884 |
 
-```text
-Source: "the cat [MASK] on the mat"
-Target: "the cat sat on the mat"
+Latency summary:
 
-Source: "paris is capital france"
-Target: "paris is the capital of france"
+- T5-small latency is approximately flat from 64 to 512 context tokens.
+- GPT-2-small latency grows strongly over the same range.
+- The current evidence supports a quality-latency tradeoff advantage for
+  encoder-decoder at realistic context sizes.
 
-Source: "the model generates token one at time"
-Target: "the model generates one token at a time"
-```
+## Retained Config Groups
 
-This keeps the first experiment focused on architecture behavior rather than task complexity.
+Encoder-decoder configs:
 
-## 6. Model Variants
+- `configs/t5_small_*squad*.yaml`
+- `configs/t5_small_*hotpotqa*.yaml`
+- `configs/t5_large_*squad*.yaml`
+- `configs/t5_large_*hotpotqa*.yaml`
+- `configs/t5_large_lora_r8_squad_30k_seed37*.yaml`
+- `configs/t5_small_xa_squad_ctx*.yaml`
 
-### Variant A: Frozen BERT + Small Decoder
+Decoder-only configs:
 
-- Encoder: `google-bert/bert-base-uncased`
-- Decoder: randomly initialized 4-layer causal autoregressive Transformer decoder with cross-attention
-- Encoder training: frozen
-- Purpose: direct test of the hypothesis
+- `configs/gpt2_small_*squad*.yaml`
+- `configs/gpt2_small_*hotpotqa*.yaml`
+- `configs/gpt2_large_*squad*.yaml`
+- `configs/gpt2_large_*hotpotqa*.yaml`
+- `configs/qwen_05b_*squad*.yaml`
+- `configs/qwen_05b_*hotpotqa*.yaml`
 
-### Variant B: Frozen Modern Encoder + Small Decoder
+## Removed Experiment Families
 
-- Encoder: a stronger encoder-only checkpoint, for example ModernBERT, DeBERTa, E5, or BGE
-- Decoder: same small decoder as Variant A
-- Encoder training: frozen
-- Purpose: test whether better encoder representations improve the frozen-memory setup
-
-### Variant C: Decoder-Only Control
-
-- Model: small GPT-style decoder trained on the target only, optionally with source prepended as text
-- Purpose: measure whether cross-attending to encoder memory beats a simple causal baseline
-
-## 7. Recommended First Launch
-
-Start with Variant A only.
-
-Reason:
-
-- Variant A is the direct hypothesis test.
-- It keeps the first launch focused on the core mechanism: one frozen encoder pass, then autoregressive decoder generation.
-- Variant B and Variant C should wait until the pipeline is stable, otherwise failures will be hard to attribute.
-
-## 8. Dataset
-
-Use synthetic denoising data first.
-
-Generate 50k to 200k examples from clean text by applying corruption functions:
-
-- random token deletion
-- random mask replacement
-- light word shuffling within a small window
-- punctuation removal
-- article/preposition deletion
-- span deletion
-
-Target is always the original clean text.
-
-Recommended source corpus for a quick local run:
-
-- WikiText-2 for debugging
-- WikiText-103 or OpenWebText subset for a larger run
-- Any internal text corpus if licensing permits
-
-Keep sequence length short for the first launch:
-
-```text
-source_max_length = 64
-target_max_length = 64
-```
-
-## 9. Architecture Details
-
-### Encoder
-
-- Load pretrained encoder-only model.
-- Run it once per source sequence.
-- Pass `last_hidden_state` and source attention mask to decoder cross-attention.
-- For frozen variants, set all encoder parameters to `requires_grad = False`.
-
-### Decoder
-
-The decoder must include:
-
-- causal self-attention over generated target tokens
-- cross-attention over fixed encoder hidden states
-- feed-forward block
-- output projection to tokenizer vocabulary
-- KV cache during generation
-
-The decoder must not use a diffusion, denoising-refinement, masked-token-prediction, or parallel-token objective. Its only generation objective is next-token prediction:
-
-```text
-p(y | x) = product_t p(y_t | y_<t, Encoder(x))
-```
-
-Recommended initial decoder size:
-
-```text
-layers = 4
-hidden_size = encoder_hidden_size
-attention_heads = 8
-ffn_size = 4 * hidden_size
-dropout = 0.1
-```
-
-For the first implementation, using Hugging Face `EncoderDecoderModel` is acceptable. For the custom hypothesis run, implement or configure the decoder so encoder outputs can be precomputed and passed into generation.
-
-## 10. Training Setup
-
-### Objective
-
-Teacher-forced autoregressive cross-entropy:
-
-```text
-loss = -sum_t log p(target_t | target_<t, encoder(source))
-```
-
-Training uses shifted target tokens:
-
-```text
-decoder_input = [BOS], target_1, target_2, ..., target_{n-1}
-labels        = target_1, target_2, ..., target_n, [EOS]
-```
-
-At each position, the decoder predicts exactly the next target token while attending to previous target tokens and the frozen encoder hidden states.
-
-### Initial Hyperparameters
-
-```text
-optimizer = AdamW
-batch_size = 32 effective
-learning_rate_decoder = 3e-4
-learning_rate_encoder = 0
-warmup_steps = 1000
-max_steps = 20k debug run, 100k full run
-label_smoothing = 0.0 initially
-gradient_clip_norm = 1.0
-mixed_precision = bf16 if available, else fp16
-```
-
-### Early Debug Run
-
-Before the real run, overfit 128 examples.
-
-Pass criteria:
-
-- training loss drops sharply
-- generated samples resemble targets
-- encoder forward count equals one per input sequence during generation
-- no source re-tokenization or encoder call happens inside the decoding loop
-
-## 11. Evaluation
-
-### Quality Metrics
-
-- exact match for synthetic denoising
-- token-level F1
-- BLEU or chrF for reconstruction quality
-- validation negative log likelihood
-- manual sample inspection every checkpoint
-
-### Efficiency Metrics
-
-- trainable parameter count
-- total parameter count
-- encoder forward calls per generated sequence
-- generation tokens per second
-- peak GPU memory
-- latency for fixed batch sizes: 1, 8, 32
-
-### Required Comparisons
-
-For the first launch, compare Variant A against simple task controls:
-
-```text
-source_copy_score = metric(corrupted_source, target)
-model_score = metric(FrozenBERTSmallDecoder, target)
-quality_gain = model_score - source_copy_score
-```
-
-After Variant A works, add Variant C as a decoder-only control:
-
-```text
-cross_attention_gain = metric(FrozenBERTSmallDecoder) - metric(DecoderOnlyControl)
-```
-
-The hypothesis is promising only if Variant A uses the fixed encoder memory, beats source-copy and decoder-only controls, and keeps encoder calls to exactly one per generated sequence.
-
-## 12. Instrumentation Requirement
-
-Add an explicit generation test that counts encoder calls.
-
-Expected behavior:
-
-```text
-encoder_calls == 1
-decoder_calls == number_of_generated_tokens
-```
-
-This should be a unit or integration test, not just a manual assumption.
-
-## 13. Implementation Milestones
-
-### Milestone 1: Project Scaffold
-
-Create:
-
-```text
-configs/
-  frozen_bert_small_decoder.yaml
-  frozen_modern_encoder_small_decoder.yaml
-  decoder_only_control.yaml
-src/
-  data.py
-  corruption.py
-  models.py
-  train.py
-  generate.py
-  evaluate.py
-tests/
-  test_generation_encoder_called_once.py
-  test_overfit_tiny_batch.py
-```
-
-### Milestone 2: Data Pipeline
-
-Implement:
-
-- clean text loader
-- corruption functions
-- source/target tokenizer encoding
-- label masking with `-100` for padding
-- deterministic seed control
-
-### Milestone 3: Frozen Encoder Variant
-
-Implement frozen BERT encoder plus small decoder.
-
-Required outputs:
-
-- checkpoint
-- validation metrics
-- generated samples
-- parameter count
-- generation latency
-- encoder-call-count test result
-
-### Milestone 4: Controls And Extensions
-
-After Variant A works, implement Variant C and then Variant B.
-
-Required outputs:
-
-- checkpoint
-- validation metrics
-- generated samples
-- parameter count
-- generation latency
-- comparison against Variant A
-
-### Milestone 5: Comparison Report
-
-Write:
-
-```text
-reports/first_experiment_results.md
-```
-
-Include:
-
-- setup
-- dataset size
-- model configs
-- metric table
-- latency table
-- generated examples
-- failure cases
-- conclusion on whether the hypothesis survived the first test
-
-## 14. Success Criteria
-
-The hypothesis passes the first experiment if Variant A:
-
-- reconstructs denoised text substantially better than the corrupted source-copy baseline
-- improves over a decoder-only control once Variant C is added
-- learns source-faithful reconstruction rather than only fluent continuation
-- performs generation with exactly one encoder call per input
-- keeps the encoder fully frozen
-
-The hypothesis fails or needs revision if:
-
-- the decoder ignores encoder memory
-- outputs are fluent but not source-faithful
-- it fails to improve over source-copy or decoder-only controls
-- the small decoder needs to become so large that the efficiency advantage disappears
-
-## 15. Launch Command Shape
-
-The exact commands depend on the final codebase, but the intended flow should be:
-
-```bash
-python -m src.train --config configs/frozen_bert_small_decoder.yaml
-
-python -m src.evaluate --checkpoint runs/frozen_bert_small_decoder/best
-
-python -m pytest tests/test_generation_encoder_called_once.py
-```
-
-## 16. Next Decision
-
-The next implementation step is to create the actual training scaffold. The fastest route is:
-
-1. Use Hugging Face `datasets` and `transformers`.
-2. Start with frozen BERT encoder plus small decoder.
-3. Add a decoder-only control after the first model works.
-4. Only after that, test stronger modern encoders.
+The following branches were removed from the active experiment set because they
+do not directly support the current architectural comparison:
+
+- frozen BERT plus custom randomly initialized decoder,
+- WikiText denoising and span-recovery experiments,
+- T5 WikiText span baselines,
+- Qwen prefix-memory compressed-context experiments.
+
+The retained Qwen work is the direct decoder-only baseline. Prefix-memory Qwen
+was removed because it is a hybrid encoder/bridge/decoder architecture, not a
+clean decoder-only comparator.
+
+## Current Paper Framing
+
+The defensible claim is narrower than universal encoder-decoder superiority:
+
+> For context-grounded generation with medium to large input contexts,
+> encoder-decoder architectures provide a better inductive bias and stronger
+> quality-efficiency tradeoff than decoder-only architectures that consume the
+> document as a causal prefix.
+
+## Next Useful Checks
+
+1. Keep Qwen2-0.5B as a modern decoder-only comparison point.
+2. Align all headline evaluations to the same validation size and decoding
+   protocol where possible.
+3. Add confidence intervals or repeated-seed evaluations for the final tables.
+4. Extend latency measurements beyond 512 context tokens if making a strong
+   inference-crossover claim.

@@ -1,7 +1,7 @@
 [project]
 name = "encoder-decoder"
 version = "0.1.0"
-description = "Frozen encoder memory with a small autoregressive decoder experiment."
+description = "Encoder-decoder versus decoder-only experiments for context-grounded generation."
 readme = "implemented_experiment_plan.md"
 requires-python = ">=3.10"
 dependencies = [
