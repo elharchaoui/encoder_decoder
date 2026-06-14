@@ -24,6 +24,7 @@
 \newcommand{\gpttwo}{GPT-2\xspace}
 \newcommand{\gptsmall}{GPT-2-small\xspace}
 \newcommand{\gptlarge}{GPT-2-large\xspace}
+\newcommand{\qwensmall}{Qwen2-0.5B\xspace}
 \newcommand{\xaonly}{XA-only\xspace}
 \newcommand{\squad}{SQuAD\xspace}
 \newcommand{\hotpotqa}{HotpotQA\xspace}
@@ -200,8 +201,10 @@ making it a more demanding test of context comprehension.
 
 All models are trained with AdamW, linear warmup (10\% of steps),
 bfloat16 precision, and seed 37.
-We train for 3{,}000 steps with effective batch size 32 (batch 4,
-gradient accumulation 8).
+We train for 3{,}000 steps with an effective batch size of 32 across all
+models (micro-batch 4, gradient accumulation 8 for most models;
+micro-batch 2, gradient accumulation 16 for T5-large full fine-tuning,
+constrained by GPU memory with gradient checkpointing enabled).
 Generation uses beam search with 4 beams.
 Hardware: single NVIDIA RTX 3060 (12GB VRAM).
 
@@ -224,7 +227,10 @@ Table~\ref{tab:main-results} presents the full paradigm comparison.
 At \emph{small scale}, T5-small \xaonly (60.5M total, 6.3M trainable)
 outperforms fully fine-tuned \gptsmall (124M) by 2.65$\times$ on \squad
 (F1: 0.708 vs.\ 0.267) and 7.0$\times$ on \hotpotqa (0.209 vs.\ 0.030).
-This gap holds despite GPT-2-small having twice the total parameters.
+Crucially, \tssmall \xaonly also outperforms \qwensmall-Instruct (494M, 8.2$\times$
+more total parameters, a 2024 model) by 1.22$\times$ on \squad (0.708 vs.\ 0.579)
+and 1.47$\times$ on \hotpotqa (0.209 vs.\ 0.142), establishing that the
+architectural advantage is not an artifact of comparing against an older baseline.
 
 At \emph{large scale}, T5-large \xaonly (737M total, 100.7M trainable)
 outperforms \gptlarge (774M, fully fine-tuned) by 1.61$\times$ on \squad
@@ -235,9 +241,12 @@ controlled architectural comparison.
 \begin{table}[t]
   \centering
   \small
-  \caption{Main paradigm comparison. All models trained on 30k examples (SQuAD)
-  or 30k examples (HotpotQA) except small-scale models (3k). \xaonly = cross-attention-only adaptation.
-  Bold: best per task and scale group.}
+  \caption{Main paradigm comparison. Small-scale models trained on 3k examples;
+  large-scale models on 30k examples. \xaonly = cross-attention-only adaptation.
+  \qwensmall is a modern (2024) instruction-tuned decoder-only model included as
+  a contemporary baseline. Bold: best per task and scale group.
+  $\dagger$: HotpotQA result for full FT not collected due to compute constraints;
+  the architectural advantage is established by the \xaonly and LoRA rows.}
   \label{tab:main-results}
   \begin{tabular}{llrrrr}
     \toprule
@@ -247,39 +256,44 @@ controlled architectural comparison.
     \cmidrule(lr){4-5}
     & & & F1 & EM & F1 \\
     \midrule
-    \multicolumn{6}{l}{\emph{Small scale ($\sim$60--124M parameters)}} \\
+    \multicolumn{6}{l}{\emph{Small scale (enc-dec 60M; dec-only 124M--494M)}} \\
     \gptsmall & dec-only & 124M & 0.267 & 0.150 & 0.030 \\
+    \qwensmall & dec-only & 494M & 0.579 & 0.400 & 0.142 \\
     \tssmall~\xaonly & enc-dec & \textbf{6.3M} & \textbf{0.708} & \textbf{0.529} & \textbf{0.209} \\
     \midrule
     \multicolumn{6}{l}{\emph{Large scale ($\sim$737--774M parameters)}} \\
     \gptlarge & dec-only & 774M & 0.504 & 0.352 & 0.085 \\
     \tslarge~\xaonly & enc-dec & 100.7M & \textbf{0.813} & \textbf{0.641} & \textbf{0.306} \\
-    \tslarge~LoRA r=8 & enc-dec & 2.4M & \textbf{0.815} & 0.645 & — \\
-    \tslarge~full FT & enc-dec & 737M & \textbf{0.816} & 0.660 & — \\
+    \tslarge~LoRA r=8 & enc-dec & 2.4M & \textbf{0.815} & 0.645 & \textbf{0.327} \\
+    \tslarge~full FT & enc-dec & 737M & \textbf{0.816} & 0.660 & —$\dagger$ \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \paragraph{Architecture dominates scale.}
-A striking finding is that \tssmall (60.5M total parameters) outperforms
-\gptlarge (774M parameters, 12.8$\times$ larger) on \hotpotqa
-(F1: 0.209 vs.\ 0.085).
+Two results illustrate this sharply.
+First, \tssmall (60.5M total parameters) outperforms \gptlarge (774M, 12.8$\times$
+larger) on \hotpotqa (F1: 0.209 vs.\ 0.085).
+Second, \tssmall outperforms \qwensmall-Instruct (494M, a modern 2024 model,
+8.2$\times$ larger) on both benchmarks.
 The structural capability---bidirectional encoding of multiple passages---matters
 more than raw parameter count for multi-hop reasoning.
 
 \subsection{Efficiency of Adaptation}
 \label{sec:efficiency}
 
-Table~\ref{tab:main-results} shows three T5-large training configurations
-on \squad: \xaonly (13.7\% trainable), LoRA r=8 (0.32\%), and full fine-tuning
-(100\%).
-All three achieve F1 $\approx 0.815$, with differences smaller than measurement
-noise.
-Crucially, \xaonly and LoRA achieve \emph{lower} cross-entropy validation loss
-than full fine-tuning (0.306 and 0.306 vs.\ 0.336), suggesting that regularization
-via parameter freezing prevents mild overfitting.
-Training only the cross-attention layers or a tiny rank-8 subspace is sufficient
-to unlock the pre-trained encoder-decoder's context-reading capability.
+Table~\ref{tab:main-results} shows three T5-large training configurations.
+On \squad, all three achieve F1 $\approx 0.815$, with differences smaller than
+measurement noise.
+Notably, \xaonly and LoRA achieve \emph{lower} cross-entropy validation loss
+than full fine-tuning (0.3059 and 0.3062 vs.\ 0.336), consistent with
+regularization via parameter freezing limiting overfitting---though we do not
+have learning curves to test this causal claim directly.
+On \hotpotqa, LoRA r=8 (2.4M trainable parameters, 0.32\% of the model)
+achieves F1~=~0.327, slightly exceeding \xaonly (0.306) and outperforming
+fully fine-tuned \gptlarge (0.085) by 3.85$\times$.
+Training only a tiny rank-8 subspace is sufficient to unlock the pre-trained
+encoder-decoder's context-reading capability on both single-hop and multi-hop tasks.
 
 \subsection{BERTScore: Semantic Evaluation}
 \label{sec:bertscore}
@@ -332,11 +346,13 @@ at 512 tokens (+6\%).
 GPT-2-small latency grows from 6.3~ms to 40.6~ms over the same range (+544\%).
 The curves cross at approximately 512 tokens.
 
-\paragraph{Quality also scales better for T5.}
+\paragraph{Quality scales with context for both models.}
 Evaluating both models at context lengths 128--512 tokens
 (Table~\ref{tab:context-quality}), T5-small F1 increases from 0.536 to 0.722
-(+35\%) while GPT-2-small increases from 0.087 to 0.288 (+20\%).
-Bidirectional encoding extracts proportionally more information from longer contexts.
+(+0.186 absolute) while GPT-2-small increases from 0.087 to 0.288 (+0.201 absolute).
+Both models improve with context length, but \tssmall maintains a large absolute
+advantage---2.5$\times$ to 6.1$\times$ across all tested lengths---because its
+bidirectional encoder can exploit the full context from the outset.
 
 \begin{table}[t]
   \centering
@@ -360,7 +376,7 @@ Bidirectional encoding extracts proportionally more information from longer cont
 
 \paragraph{Combined quality-latency tradeoff.}
 At 512-token context---the typical chunk size for RAG systems---T5-small delivers
-\textbf{1.94$\times$ better F1 per millisecond} and \textbf{5.2$\times$ better F1
+\textbf{1.92$\times$ better F1 per millisecond} and \textbf{5.2$\times$ better F1
 per parameter} than GPT-2-small.
 
 %------------------------------------------------------------------------------
@@ -404,20 +420,26 @@ explaining why the T5 advantage grows from 1.61$\times$ (SQuAD) to
 \subsection{Why T5 Latency Is Flat}
 
 Each T5 decoder step has cost dominated by its feed-forward sublayers
-($d_\text{model} \times d_\text{ff} \approx 512 \times 2048$ multiply-accumulates
-for T5-small).
-Cross-attention over $L$ encoder states adds $L \times d_{kv}$ work per step,
-which is small relative to the FFN cost for typical $L \leq 512$.
+($2 \times d_\text{model} \times d_\text{ff} \approx 2 \times 512 \times 2048$
+multiply-accumulates per token for T5-small, counting both projection directions).
+Cross-attention over $L$ encoder states adds $L \times d_\text{kv}$ work per step,
+where $d_\text{kv} = d_\text{model} / n_\text{heads}$ (64 for T5-small);
+this is small relative to the FFN cost for typical $L \leq 512$.
 The encoder runs once (a single bidirectional pass) and is not re-invoked
 during decoding.
-Total latency $\approx T \times c_\text{step}$ where $T$ is the number of
-generated tokens and $c_\text{step}$ is nearly context-independent.
+Total decoding latency $\approx T \times c_\text{step}$ where $T$ is the number of
+generated tokens and $c_\text{step}$ (per-step compute, dominated by the FFN)
+is nearly context-independent.
 
 GPT-2 with KV caching attends to all $(L + t)$ previous tokens at step $t$.
-Cost per step scales as $O(L)$, making total latency $O(T \cdot L)$.
-At $L = 512$, $T = 16$: this is $8{,}192$ token-attention operations
-versus $\approx 512 \times 16 = 8{,}192$ cross-attention operations in T5---
-but T5 computes this once (in the encoder) rather than at every decode step.
+Per-step cost scales as $O(L + t)$, making total generation cost $O(T \cdot L)$
+in the large-$L$ regime---the self-attention over the context grows with every
+additional decode step.
+In T5, the context cost is borne once by the encoder ($O(L^2)$ self-attention,
+run a single time), while each decode step's cross-attention adds only $O(L)$
+amortized across $T$ steps.
+This structural asymmetry is directly visible in our latency measurements
+(+6\% for T5-small vs.\ +544\% for GPT-2-small over 64--512 tokens).
 
 \subsection{LoRA Matches Full Fine-Tuning}
 
@@ -431,24 +453,76 @@ The tiny LoRA subspace is sufficient for this redirection.
 This has a practical implication: an encoder-decoder model requires negligible
 storage overhead per task when adapted with LoRA.
 
+\subsection{Pre-Training Data as a Potential Confound}
+
+T5 was pre-trained on C4 ($\sim$750\,GB of cleaned web text) while GPT-2 was
+pre-trained on WebText ($\sim$40\,GB).
+One could therefore argue that T5's advantage reflects richer pre-training data
+rather than architectural inductive bias.
+Three observations argue against this interpretation.
+First, the LoRA result (0.32\% of parameters trained) matches full fine-tuning
+identically, meaning the relevant capability is \emph{already encoded} in the
+frozen pre-trained weights---a pattern consistent with strong pre-training but
+not sufficient to explain the 1.61$\times$--7.0$\times$ gap over GPT-2, which was
+also pre-trained.
+Second, \qwensmall-Instruct (494M parameters, pre-trained on far more data than
+either T5-large or GPT-2, with modern instruction tuning) is still outperformed
+by \tssmall (60.5M) on both benchmarks, suggesting the disadvantage of the
+decoder-only paradigm persists even when data and scale favor the decoder-only model.
+Third, the gap widens on \hotpotqa---the task requiring bidirectional evidence
+integration---which is precisely the structural capability the encoder provides,
+regardless of pre-training data volume.
+We acknowledge that a fully controlled comparison using the same pre-training
+corpus would strengthen the architectural attribution further.
+
+%------------------------------------------------------------------------------
+\section{Limitations}
+%------------------------------------------------------------------------------
+
+Our conclusions are bounded by the following constraints.
+\textbf{Task scope:} all experiments use span-extractive QA benchmarks (\squad
+and \hotpotqa), where the answer is a string present in the input context.
+Whether the same advantage holds for abstractive summarization, open-domain
+dialogue, or tasks requiring parametric (non-grounded) knowledge is not
+established here.
+\textbf{Decoder-only baselines:} GPT-2-small and GPT-2-large (2019) are
+the primary decoder-only models; we include \qwensmall-Instruct (2024) as a
+modern reference at small scale, but we do not include large-scale modern
+decoder-only models (e.g., LLaMA-3).
+\textbf{Single training run:} each configuration is trained with a single random
+seed (37); we do not report confidence intervals.
+The observed performance gaps (1.61$\times$--7.0$\times$) are large relative to
+typical seed variance, but a multi-seed study would provide stronger statistical
+grounding.
+\textbf{Encoder cost at very long context:} T5's encoder runs $O(L^2)$
+self-attention once per query; at context lengths substantially beyond 512 tokens
+(e.g., multi-document RAG with thousands of tokens), encoder compute may become
+a bottleneck that our latency analysis does not capture.
+\textbf{Efficiency measurements:} latency benchmarks are for T5-small vs.\
+GPT-2-small only; large-scale latency profiles were not collected.
+
 %------------------------------------------------------------------------------
 \section{Conclusion}
 %------------------------------------------------------------------------------
 
 We have shown that encoder-decoder architectures provide a systematic and
 substantial advantage over decoder-only architectures for context-grounded
-generation, at both small and large parameter scales and across two qualitatively
+extractive QA, at both small and large parameter scales and across two qualitatively
 different benchmarks.
 The advantage is:
 
 \begin{itemize}
   \item \textbf{Large in magnitude}: 1.61--2.65$\times$ on extractive QA,
         3.61--7.0$\times$ on multi-hop QA.
+  \item \textbf{Robust to baseline choice}: T5-small (60M) outperforms both
+        GPT-2-large (774M, 2019) and Qwen2-0.5B-Instruct (494M, 2024),
+        ruling out a GPT-2-specific artifact.
   \item \textbf{Efficient}: achievable with as few as 0.32\% of model parameters
-        via LoRA, with no loss relative to full fine-tuning.
+        via LoRA, with no loss relative to full fine-tuning on \squad and
+        with a 3.85$\times$ advantage over fully fine-tuned \gptlarge on \hotpotqa.
   \item \textbf{Efficiency-dominant at long context}: T5 latency is effectively
         constant over 64--512 tokens while GPT-2's grows by 544\%.
-        At 512-token context, T5 delivers 1.94$\times$ better quality per
+        At 512-token context, T5 delivers 1.92$\times$ better quality per
         millisecond.
   \item \textbf{Semantic}: confirmed by BERTScore (roberta-large), which reveals
         that GPT-2's failures on multi-hop QA are semantically deep, not lexical.
@@ -459,9 +533,12 @@ parametric knowledge.
 For tasks that require faithfully reading and exploiting a provided context
 passage---the setting that defines retrieval-augmented generation, document QA,
 and grounded summarization---encoder-decoder architectures offer a more
-appropriate inductive bias, greater efficiency, and stronger empirical performance.
+appropriate inductive bias, greater efficiency, and stronger empirical performance
+on the span-extractive benchmarks studied here.
 We recommend that practitioners deploying context-grounded NLP systems
-reconsider encoder-decoder models before defaulting to decoder-only.
+reconsider encoder-decoder models before defaulting to decoder-only, particularly
+for retrieval-augmented settings where the answer must be grounded in supplied
+passages rather than generated from parametric memory.
 
 %------------------------------------------------------------------------------
 \bibliographystyle{plainnat}
