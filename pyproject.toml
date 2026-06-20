@@ -2,7 +2,7 @@
 name = "encoder-decoder"
 version = "0.1.0"
 description = "Encoder-decoder versus decoder-only experiments for context-grounded generation."
-readme = "implemented_experiment_plan.md"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "accelerate>=0.30.0",
