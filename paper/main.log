@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2026.2.20)  12 JUN 2026 12:48
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2026.2.20)  14 JUN 2026 12:25
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -369,7 +369,7 @@ Package: array 2023/10/16 v2.5g Tabular extension package (FMi)
 Package: xspace 2014/10/28 v1.13 Space after command names (DPC,MH)
 )
 LaTeX Font Info:    Trying to load font information for OT1+ptm on input line 4
-2.
+3.
 
 (/usr/share/texlive/texmf-dist/tex/latex/psnfss/ot1ptm.fd
 File: ot1ptm.fd 2001/06/04 font definitions for OT1/ptm.
@@ -382,24 +382,24 @@ File: l3backend-pdftex.def 2024-01-04 L3 backend support: PDF output (pdfTeX)
 (./main.aux)
 \openout1 = `main.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
 
 *geometry* driver: auto-detecting
 *geometry* detected driver: pdftex
@@ -457,25 +457,25 @@ Package epstopdf-base Info: Redefining graphics rule for `.eps' on input line 4
 File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Liv
 e
 ))
-Package hyperref Info: Link coloring OFF on input line 42.
+Package hyperref Info: Link coloring OFF on input line 43.
 
 (./main.out) (./main.out)
 \@outlinefile=\write3
 \openout3 = `main.out'.
 
-LaTeX Info: Redefining \microtypecontext on input line 42.
-Package microtype Info: Applying patch `item' on input line 42.
-Package microtype Info: Applying patch `toc' on input line 42.
-Package microtype Info: Applying patch `eqnum' on input line 42.
-Package microtype Info: Applying patch `footnote' on input line 42.
-Package microtype Info: Applying patch `verbatim' on input line 42.
+LaTeX Info: Redefining \microtypecontext on input line 43.
+Package microtype Info: Applying patch `item' on input line 43.
+Package microtype Info: Applying patch `toc' on input line 43.
+Package microtype Info: Applying patch `eqnum' on input line 43.
+Package microtype Info: Applying patch `footnote' on input line 43.
+Package microtype Info: Applying patch `verbatim' on input line 43.
 Package microtype Info: Generating PDF output.
 Package microtype Info: Character protrusion enabled (level 2).
 Package microtype Info: Using default protrusion set `alltext'.
 Package microtype Info: Automatic font expansion enabled (level 2),
 (microtype)             stretch: 20, shrink: 20, step: 1, non-selected.
 Package microtype Info: Using default expansion set `alltext-nott'.
-LaTeX Info: Redefining \showhyphens on input line 42.
+LaTeX Info: Redefining \showhyphens on input line 43.
 Package microtype Info: No adjustment of tracking.
 Package microtype Info: No adjustment of interword spacing.
 Package microtype Info: No adjustment of character kerning.
@@ -487,7 +487,7 @@ File: mt-ptm.cfg 2006/04/20 v1.7 microtype config. file: Times (RS)
 File: mt-cmr.cfg 2013/05/19 v2.2 microtype config. file: Computer Modern Roman 
 (RS)
 )
-LaTeX Font Info:    Trying to load font information for U+msa on input line 45.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 46.
 
 
 (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsa.fd
@@ -496,7 +496,7 @@ File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 (/usr/share/texlive/texmf-dist/tex/latex/microtype/mt-msa.cfg
 File: mt-msa.cfg 2006/02/04 v1.1 microtype config. file: AMS symbols (a) (RS)
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 45.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 46.
 
 
 (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsb.fd
@@ -506,7 +506,7 @@ File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 File: mt-msb.cfg 2005/06/01 v1.0 microtype config. file: AMS symbols (b) (RS)
 )
 LaTeX Font Info:    Trying to load font information for OT1+pcr on input line 4
-5.
+6.
 
 (/usr/share/texlive/texmf-dist/tex/latex/psnfss/ot1pcr.fd
 File: ot1pcr.fd 2001/06/04 font definitions for OT1/pcr.
@@ -520,42 +520,42 @@ Package microtype Info: Loading generic protrusion settings for font family
 {/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}{/usr/share/texlive/texmf-di
 st/fonts/enc/dvips/base/8r.enc}] [2]
 LaTeX Font Info:    Font shape `OT1/pcr/m/it' in size <10.95> not available
-(Font)              Font shape `OT1/pcr/m/sl' tried instead on input line 191.
- [3] [4] [5]
-LaTeX Font Info:    Trying to load font information for TS1+ptm on input line 4
-45.
+(Font)              Font shape `OT1/pcr/m/sl' tried instead on input line 192.
+ [3] [4] [5] [6]
+LaTeX Font Info:    Trying to load font information for TS1+ptm on input line 5
+15.
 
 (/usr/share/texlive/texmf-dist/tex/latex/psnfss/ts1ptm.fd
 File: ts1ptm.fd 2001/06/04 font definitions for TS1/ptm.
-) (./main.bbl [6]
-[7]) [8] (./main.aux)
+) [7] (./main.bbl
+[8]) [9] (./main.aux)
  ***********
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-01-22>
  ***********
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: 6A8D2D0BBF3AC74E895A2FCB113E48DA;2725.
+(rerunfilecheck)             Checksum: 69A7FD607806E5098746C1C71D6BF6A5;3102.
  ) 
 Here is how much of TeX's memory you used:
- 13226 strings out of 476139
- 202694 string characters out of 5794454
- 1938975 words of memory out of 5000000
- 34708 multiletter control sequences out of 15000+600000
- 598364 words of font info for 269 fonts, out of 8000000 for 9000
+ 13244 strings out of 476139
+ 202864 string characters out of 5794454
+ 1939975 words of memory out of 5000000
+ 34711 multiletter control sequences out of 15000+600000
+ 598834 words of font info for 277 fonts, out of 8000000 for 9000
  36 hyphenation exceptions out of 8191
- 75i,11n,79p,1001b,598s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,11n,79p,1001b,594s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></us
-r/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/share
-/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/share/texliv
-e/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/share/texlive/texm
-f-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/share/texlive/texmf-dist/fonts/
-type1/urw/courier/ucrro8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/ti
-mes/utmb8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmr8a.pfb>
-</usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmri8a.pfb>
-Output written on main.pdf (8 pages, 137414 bytes).
+r/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/share
+/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/share/texlive
+/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/share/texlive/texmf
+-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/share/texlive/texmf-dist/fonts/t
+ype1/urw/courier/ucrro8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/tim
+es/utmb8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmr8a.pfb><
+/usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmri8a.pfb>
+Output written on main.pdf (9 pages, 142125 bytes).
 PDF statistics:
- 267 PDF objects out of 1000 (max. 8388607)
- 236 compressed objects within 3 object streams
- 63 named destinations out of 1000 (max. 500000)
- 58513 words of extra memory for PDF output out of 61914 (max. 10000000)
+ 279 PDF objects out of 1000 (max. 8388607)
+ 247 compressed objects within 3 object streams
+ 66 named destinations out of 1000 (max. 500000)
+ 58529 words of extra memory for PDF output out of 61914 (max. 10000000)
 

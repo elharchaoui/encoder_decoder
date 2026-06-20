@@ -48,30 +48,32 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Main Quality Results}{3}{subsection.4.1}\protected@file@percent }
 \newlabel{sec:main-results}{{4.1}{3}{Main Quality Results}{subsection.4.1}{}}
 \citation{zhang2020bertscore}
-\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Main paradigm comparison. All models trained on 30k examples (SQuAD) or 30k examples (HotpotQA) except small-scale models (3k). XA-only\xspace  = cross-attention-only adaptation. Bold: best per task and scale group.}}{4}{table.1}\protected@file@percent }
-\newlabel{tab:main-results}{{1}{4}{Main paradigm comparison. All models trained on 30k examples (SQuAD) or 30k examples (HotpotQA) except small-scale models (3k). \xaonly = cross-attention-only adaptation. Bold: best per task and scale group}{table.1}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces BERTScore F1 (\texttt  {roberta-large}, rescaled baseline). The paradigm gap is robust across both lexical and semantic metrics.}}{4}{table.2}\protected@file@percent }
-\newlabel{tab:bertscore}{{2}{4}{BERTScore F1 (\texttt {roberta-large}, rescaled baseline). The paradigm gap is robust across both lexical and semantic metrics}{table.2}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Main paradigm comparison. Small-scale models trained on 3k examples; large-scale models on 30k examples. XA-only\xspace  = cross-attention-only adaptation. Qwen2-0.5B\xspace  is a modern (2024) instruction-tuned decoder-only model included as a contemporary baseline. Bold: best per task and scale group. $\dagger $: HotpotQA result for full FT not collected due to compute constraints; the architectural advantage is established by the XA-only\xspace  and LoRA rows.}}{4}{table.1}\protected@file@percent }
+\newlabel{tab:main-results}{{1}{4}{Main paradigm comparison. Small-scale models trained on 3k examples; large-scale models on 30k examples. \xaonly = cross-attention-only adaptation. \qwensmall is a modern (2024) instruction-tuned decoder-only model included as a contemporary baseline. Bold: best per task and scale group. $\dagger $: HotpotQA result for full FT not collected due to compute constraints; the architectural advantage is established by the \xaonly and LoRA rows}{table.1}{}}
 \@writefile{toc}{\contentsline {paragraph}{Architecture dominates scale.}{4}{section*.13}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Efficiency of Adaptation}{4}{subsection.4.2}\protected@file@percent }
 \newlabel{sec:efficiency}{{4.2}{4}{Efficiency of Adaptation}{subsection.4.2}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.3}BERTScore: Semantic Evaluation}{4}{subsection.4.3}\protected@file@percent }
 \newlabel{sec:bertscore}{{4.3}{4}{BERTScore: Semantic Evaluation}{subsection.4.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces BERTScore F1 (\texttt  {roberta-large}, rescaled baseline). The paradigm gap is robust across both lexical and semantic metrics.}}{5}{table.2}\protected@file@percent }
+\newlabel{tab:bertscore}{{2}{5}{BERTScore F1 (\texttt {roberta-large}, rescaled baseline). The paradigm gap is robust across both lexical and semantic metrics}{table.2}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Token F1 vs.\ context length (SQuAD\xspace  , 512 evaluation examples). T5-small benefits more from longer contexts than GPT-2-small.}}{5}{table.3}\protected@file@percent }
 \newlabel{tab:context-quality}{{3}{5}{Token F1 vs.\ context length (\squad , 512 evaluation examples). T5-small benefits more from longer contexts than GPT-2-small}{table.3}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Long-Context Efficiency}{5}{subsection.4.4}\protected@file@percent }
 \newlabel{sec:latency}{{4.4}{5}{Long-Context Efficiency}{subsection.4.4}{}}
 \@writefile{toc}{\contentsline {paragraph}{Results.}{5}{section*.14}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Quality also scales better for T5.}{5}{section*.15}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Quality scales with context for both models.}{5}{section*.15}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Combined quality-latency tradeoff.}{5}{section*.16}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {5}Analysis}{5}{section.5}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Why Encoder-Decoder Wins}{5}{subsection.5.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Why the Gap Is Larger on HotpotQA}{5}{subsection.5.2}\protected@file@percent }
-\bibstyle{plainnat}
-\bibdata{refs}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Why the Gap Is Larger on HotpotQA}{6}{subsection.5.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Why T5 Latency Is Flat}{6}{subsection.5.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {5.4}LoRA Matches Full Fine-Tuning}{6}{subsection.5.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {6}Conclusion}{6}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Pre-Training Data as a Potential Confound}{6}{subsection.5.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Limitations}{7}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Conclusion}{7}{section.7}\protected@file@percent }
+\bibstyle{plainnat}
+\bibdata{refs}
 \bibcite{brown2020language}{{1}{2020}{{Brown et~al.}}{{Brown, Mann, Ryder, Subbiah, Kaplan, Dhariwal, Neelakantan, Shyam, Sastry, Askell, et~al.}}}
 \bibcite{houlsby2019parameter}{{2}{2019}{{Houlsby et~al.}}{{Houlsby, Giurgiu, Jastrzebski, Morrone, De~Laroussilhe, Gesmundo, Attariyan, and Gelly}}}
 \bibcite{hu2022lora}{{3}{2022}{{Hu et~al.}}{{Hu, Shen, Wallis, Allen-Zhu, Li, Wang, Wang, and Chen}}}
@@ -84,4 +86,4 @@
 \bibcite{touvron2023llama}{{10}{2023}{{Touvron et~al.}}{{Touvron, Lavril, Izacard, Martinet, Lachaux, Lacroix, Rozi{\`e}re, Goyal, Hambro, Azhar, et~al.}}}
 \bibcite{yang2018hotpotqa}{{11}{2018}{{Yang et~al.}}{{Yang, Qi, Zhang, Bengio, Cohen, Salakhutdinov, and Manning}}}
 \bibcite{zhang2020bertscore}{{12}{2020}{{Zhang et~al.}}{{Zhang, Kishore, Wu, Weinberger, and Artzi}}}
-\gdef \@abspage@last{8}
+\gdef \@abspage@last{9}
